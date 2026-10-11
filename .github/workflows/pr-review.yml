@@ -1,20 +1,23 @@
 name: PR Review Agent
 
 # Thin caller for the org PR Review agent (petry-projects/.github-private),
-# pinned to the known-good `pr-review/v1-stable` channel. Synced from the org
-# standard (petry-projects/.github standards/workflows/pr-review.yml).
+# pinned to the known-good `pr-review/stable` channel. Adopted from the validated
+# `.github-private/pr-review-trigger.yml` template (#536 consumer fan-out).
 #
-# - Version selection is the MOVING `pr-review/v1-stable` tag — this file never
-#   changes on promotion; a release is rolled out by moving the tag centrally
-#   via the standards sweep. The `v1-stable` channel is immutable per the org
-#   standard (#533).
+# - Version selection is the MOVING `pr-review/stable` tag — this file never
+#   changes on promotion; a release is rolled out by moving the tag centrally.
+#   Do NOT pin the `uses:` ref to a commit SHA here: Dependabot's github-actions
+#   updater treats a SHA-pinned reusable as a versioned dependency and auto-bumps
+#   it to the newest tag, which dragged this caller onto the unreleased `next`
+#   v1.8.0 ahead of stable (#310). A non-semver moving tag is left untouched by
+#   Dependabot, matching the other consumers (markets/ContentTwin/...).
 # - The channel-pinned `uses:` line carries the inline
 #   `# NOSONAR(githubactions:S7637)` marker — the org-wide canonical exemption
 #   for first-party reusable-ref caller stubs (#549). It suppresses SonarCloud's
 #   "pin actions to a full SHA" rule at analysis time, clearing BOTH the quality
 #   gate AND the code-scanning SARIF alert (supersedes the per-file
 #   `sonar-project.properties` exemption, which only quieted the gate).
-# - `agent_ref: pr-review/v1-stable` pins the agent's own scripts to the same
+# - `agent_ref: pr-review/stable` pins the agent's own scripts to the same
 #   channel (#506), so the review logic AND scripts run the known-good version.
 # - Secrets are forwarded via `secrets: inherit`, matching every other pr-review
 #   caller in the org and TalkTerm's own `dev-lead.yml` (#385). The reusable reads
@@ -50,6 +53,25 @@ on:
 
 permissions: {}
 
+# Serialize redundant runs for the same PR head commit. The overlapping triggers
+# above (check_suite:completed, pull_request:synchronize, pull_request_review)
+# all fire for one commit; without a concurrency lane they launch parallel
+# duplicate reviews, inflating run duration and producing cancelled runs
+# (Fleet Monitor #374). Grouping per head SHA lets a *new* commit start its own
+# run while same-SHA events share a lane. cancel-in-progress: false so an
+# in-flight review is never interrupted — the reusable's per-head-SHA
+# idempotency no-ops the queued duplicate. workflow_dispatch falls back to
+# pr_url, and any other event (e.g. repository_dispatch) to run_id (unique, so
+# never blocked). Matches the sibling-caller convention (ci-failure-analyst.yml).
+concurrency:
+  group: >-
+    pr-review-${{
+      github.event.pull_request.head.sha ||
+      github.event.check_suite.head_sha ||
+      github.event.inputs.pr_url ||
+      github.run_id }}
+  cancel-in-progress: false
+
 jobs:
   review:
     # Skip Dependabot-triggered runs. Dependabot events read the separate
@@ -65,9 +87,9 @@ jobs:
       contents: read
       pull-requests: write
       checks: read
-    uses: petry-projects/.github-private/.github/workflows/pr-review.yml@pr-review/v1-stable  # NOSONAR(githubactions:S7637) first-party channel ref
+    uses: petry-projects/.github-private/.github/workflows/pr-review.yml@pr-review/stable  # NOSONAR(githubactions:S7637) first-party channel ref
     with:
-      agent_ref: pr-review/v1-stable
+      agent_ref: pr-review/stable
       pr_url: ${{ inputs.pr_url || '' }}
       dry_run: ${{ inputs.dry_run || '' }}
       force_review: ${{ inputs.force_review || '' }}

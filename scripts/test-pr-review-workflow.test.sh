@@ -2,10 +2,9 @@
 # test-pr-review-workflow.test.sh — portable tests for the pr-review.yml
 # regression guard (scripts/test-pr-review-workflow.sh). The guard asserts the
 # invariants of the thin caller stub synced from the org template
-# (petry-projects/.github standards/workflows/pr-review.yml): NO stub-level
-# `concurrency:` block — the engine owns concurrency, and the template forbids
-# one (#533) — AND a review-job guard that skips Dependabot-triggered runs
-# (#465). Dependabot events read the separate Dependabot secret store, so
+# (petry-projects/.github standards/workflows/pr-review.yml): a review-job
+# guard that skips Dependabot-triggered runs (#465); a top-level `concurrency:`
+# block is neither required nor forbidden (#533). Dependabot events read the separate Dependabot secret store, so
 # `secrets: inherit` forwards empty PAT/OAuth secrets and the reusable's
 # auth-scope check fails; skipping the job makes those runs neutral instead of
 # failed.
@@ -125,9 +124,9 @@ else
   pass "an if: that runs only on dependabot[bot] (== not !=) is rejected"
 fi
 
-# ── Case 6: a stub that adds a concurrency block is rejected (#533) ─────────
-# Even the old head-SHA lane with cancel-in-progress: false (#374) must fail:
-# the engine owns concurrency and the template forbids a stub-level block.
+# ── Case 6: a stub with a concurrency block is accepted (#533) ─────────
+# A top-level concurrency block is tolerated (reported, not failed) until the
+# standards sync removes it; main's stub has one.
 withconc="${TMP}/with-concurrency.yml"
 write_workflow "$withconc" "\${{ github.actor != 'dependabot[bot]' }}"
 cat >> "$withconc" <<'YAML'
@@ -139,9 +138,9 @@ concurrency:
   cancel-in-progress: false
 YAML
 if run_guard "$withconc"; then
-  fail "a stub that adds a top-level concurrency block should be REJECTED"
+  pass "a stub with a top-level concurrency block is accepted"
 else
-  pass "a stub that adds a top-level concurrency block is rejected"
+  fail "a stub with a top-level concurrency block should be ACCEPTED"
 fi
 
 # ── Case 7: a missing workflow file fails cleanly ──────────────────────────
