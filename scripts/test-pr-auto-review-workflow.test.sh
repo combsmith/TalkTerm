@@ -109,20 +109,20 @@ concurrency:
 YAML
 }
 
-# The canonical org policy: groups keyed on PR number ONLY (no head_sha, no
-# multi-PR guard), mirroring the synced standards stub.
+# The canonical org policy: groups keyed on PR number with multi-PR guard
+# (no head_sha), mirroring the synced standards stub.
 
-# Append the canonical PR-number-only concurrency block.
+# Append the canonical PR-number-only (with multi-PR guard) concurrency block.
 append_concurrency_pr_number_only() {
   local file="$1"
-  # Append the canonical policy fixture: PR-number-only keying.
+  # Append the canonical policy fixture: PR-number-only keying with multi-PR guard.
   cat >> "$file" <<'YAML'
 concurrency:
   group: >-
     ${{
-    (github.event_name == 'check_suite' && github.event.check_suite.pull_requests[0].number)
+    (github.event_name == 'check_suite' && github.event.check_suite.pull_requests[0].number && !github.event.check_suite.pull_requests[1])
     && format('pr-auto-review-ready-check-pr-{0}', github.event.check_suite.pull_requests[0].number)
-    || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number)
+    || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number && !github.event.workflow_run.pull_requests[1])
     && format('pr-auto-review-ready-check-pr-{0}', github.event.workflow_run.pull_requests[0].number)
     || format('pr-auto-review-ready-check-unique-{0}', github.run_id)
     }}
@@ -279,7 +279,29 @@ else
   fail "the canonical PR-number-only group should be ACCEPTED"
 fi
 
-# ── Case 4: a check_suite branch not keyed on the PR number is rejected ────
+# ── Case 4: a per-PR branch without multi-PR guard is rejected ─────────────
+nomultiguard="${TMP}/par-no-multi-guard.yml"
+write_header "$nomultiguard"
+cat >> "$nomultiguard" <<'YAML'
+concurrency:
+  group: >-
+    ${{
+    (github.event_name == 'check_suite' && github.event.check_suite.pull_requests[0].number)
+    && format('pr-auto-review-ready-check-pr-{0}', github.event.check_suite.pull_requests[0].number)
+    || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number)
+    && format('pr-auto-review-ready-check-pr-{0}', github.event.workflow_run.pull_requests[0].number)
+    || format('pr-auto-review-ready-check-unique-{0}', github.run_id)
+    }}
+  cancel-in-progress: ${{ github.event_name == 'check_suite' || github.event_name == 'workflow_run' }}
+YAML
+write_footer "$nomultiguard"
+if run_guard "$nomultiguard"; then
+  fail "a per-PR branch without multi-PR guard should be REJECTED"
+else
+  pass "a per-PR branch without multi-PR guard is rejected"
+fi
+
+# ── Case 4b: a check_suite branch not keyed on the PR number is rejected ────
 nomulti="${TMP}/par-check-suite-unkeyed.yml"
 write_header "$nomulti"
 append_concurrency_check_suite_unkeyed "$nomulti"
@@ -520,7 +542,7 @@ mutant_rejected "escaped {{0}} placeholders in both group keys" \
 mutant_rejected "an event-specific extra argument in one branch key" \
   "0,/ready-check-pr-{0}', github.event.check_suite.pull_requests\[0\].number/s//ready-check-pr-{0}-{1}', github.event.check_suite.pull_requests[0].number, github.event_name/"
 mutant_rejected "a check_suite branch not gated on its event name" \
-  "s/github.event_name == 'check_suite' \&\& github.event.check_suite.pull_requests\[0\].number)/github.event_name == 'push' \&\& github.event.check_suite.pull_requests[0].number)/"
+  "s/github.event_name == 'check_suite' \&\& github.event.check_suite.pull_requests\[0\].number \&\& !github.event.check_suite.pull_requests\[1\])/github.event_name == 'push' \&\& github.event.check_suite.pull_requests[0].number \&\& !github.event.check_suite.pull_requests[1])/"
 mutant_rejected "an escaped {{0}} placeholder in the run_id fallback" \
   "s/unique-{0}'/unique-{{0}}'/"
 mutant_rejected "a cancel-in-progress expression without the \${{ }} wrapper" \

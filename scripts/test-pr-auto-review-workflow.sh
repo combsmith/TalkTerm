@@ -97,18 +97,20 @@ if [[ "$group" != "null" && -n "$group" ]]; then
     PASS=false
   fi
 
-  # Each branch condition (the text before its format(...) call) must itself test
-  # that event's PR number, so an event with no PR falls through to the run_id
-  # fallback instead of matching a truthy format() result.
+  # Each branch condition must test that event's PR number and guard against
+  # multi-PR events (pull_requests[1] == null) so an event with no PR or multiple
+  # PRs falls through to the run_id fallback instead of mixing work across PRs.
   cs_cond="${cs_part%%format(*}"
   wr_cond="${wr_part%%format(*}"
   if [[ "$cs_cond" != *"github.event_name == 'check_suite'"* \
     || "$cs_cond" != *"github.event.check_suite.pull_requests[0].number"* \
-    || "$wr_cond" != *"github.event.workflow_run.pull_requests[0].number"* ]]; then
+    || "$cs_cond" != *"!github.event.check_suite.pull_requests[1]"* \
+    || "$wr_cond" != *"github.event.workflow_run.pull_requests[0].number"* \
+    || "$wr_cond" != *"!github.event.workflow_run.pull_requests[1]"* ]]; then
     {
-      echo "FAIL: a per-PR concurrency branch condition does not test its event name and PR number in $WORKFLOW"
-      echo "      Gate each branch on its event's pull_requests[0].number so no-PR runs"
-      echo "      reach the github.run_id fallback."
+      echo "FAIL: a per-PR concurrency branch condition does not gate on its event name, PR number, and multi-PR guard in $WORKFLOW"
+      echo "      Gate each branch on github.event.<event>.pull_requests[0].number && !github.event.<event>.pull_requests[1]"
+      echo "      so no-PR and multi-PR runs reach the github.run_id fallback."
     } >&2
     PASS=false
   fi
