@@ -77,11 +77,52 @@ if [[ "$group" != "null" && -n "$group" ]]; then
   per_pr="${group%||*}"
   cs_part="${per_pr%%"$wr_marker"*}"
   wr_part="${per_pr#*"$wr_marker"}"
-  run_unique_re="github\\.run_(id|number|attempt)"
+  # Event-specific identifiers (check_suite.id / workflow_run.id, ...) differ
+  # between completion events for the same PR, so they disable deduplication too.
+  run_unique_re="github\\.run_(id|number|attempt)|github\\.event\\.(check_suite|workflow_run)\\.(id|node_id|run_number|run_attempt|created_at|updated_at|url)([^[:alnum:]_]|$)"
   if [[ "$cs_part" =~ $run_unique_re || "$wr_part" =~ $run_unique_re ]]; then
     {
-      echo "FAIL: a per-PR concurrency branch contains a run-unique value (github.run_*) in $WORKFLOW"
+      echo "FAIL: a per-PR concurrency branch contains a run- or event-unique value in $WORKFLOW"
       echo "      Per-PR groups must be stable across runs so repeated events dedupe."
+    } >&2
+    PASS=false
+  fi
+
+  # The group must be a complete ${{ ... }} expression; without the delimiters the
+  # whole text is one hard-coded group string shared by every run.
+  group_trim="${group#"${group%%[![:space:]]*}"}"
+  group_trim="${group_trim%"${group_trim##*[![:space:]]}"}"
+  if [[ "$group_trim" != '${{'*'}}' ]]; then
+    echo "FAIL: concurrency.group is not a complete \${{ ... }} expression in $WORKFLOW" >&2
+    PASS=false
+  fi
+
+  # Each branch condition (the text before its format(...) call) must itself test
+  # that event's PR number, so an event with no PR falls through to the run_id
+  # fallback instead of matching a truthy format() result.
+  cs_cond="${cs_part%%format(*}"
+  wr_cond="${wr_part%%format(*}"
+  if [[ "$cs_cond" != *"github.event.check_suite.pull_requests[0].number"* \
+    || "$wr_cond" != *"github.event.workflow_run.pull_requests[0].number"* ]]; then
+    {
+      echo "FAIL: a per-PR concurrency branch condition does not test its PR number in $WORKFLOW"
+      echo "      Gate each branch on its event's pull_requests[0].number so no-PR runs"
+      echo "      reach the github.run_id fallback."
+    } >&2
+    PASS=false
+  fi
+
+  # Both branches must produce the same group namespace so check_suite and
+  # workflow_run runs for one PR dedupe against each other.
+  fmt_re="format\\('([^']*)'"
+  cs_fmt=""
+  wr_fmt=""
+  if [[ "$cs_part" =~ $fmt_re ]]; then cs_fmt="${BASH_REMATCH[1]}"; fi
+  if [[ "$wr_part" =~ $fmt_re ]]; then wr_fmt="${BASH_REMATCH[1]}"; fi
+  if [[ "$cs_fmt" != "$wr_fmt" ]]; then
+    {
+      echo "FAIL: check_suite and workflow_run branches use different group formats in $WORKFLOW"
+      echo "      ('$cs_fmt' vs '$wr_fmt'); they must share one per-PR key."
     } >&2
     PASS=false
   fi
@@ -116,7 +157,7 @@ if [[ "$group" != "null" && -n "$group" ]]; then
   # The terminal (last `||`) expression must itself be format('...{0}...', github.run_id),
   # so the run ID actually forms the group rather than appearing as an unused argument.
   fallback="${group##*||}"
-  fallback_re="^[[:space:]]*format\\('[^']*\\{0\\}[^']*',[[:space:]]*github\\.run_id[[:space:]]*\\)[[:space:]]*(\\}\\})?[[:space:]]*$"
+  fallback_re="^[[:space:]]*format\\('[^']*\\{0\\}[^']*',[[:space:]]*github\\.run_id[[:space:]]*\\)[[:space:]]*\\}\\}[[:space:]]*$"
   if [[ "$fallback" =~ $fallback_re ]]; then
     echo "PASS: group has a run-unique (github.run_id) fallback in $WORKFLOW"
   else

@@ -367,6 +367,91 @@ else
   pass "a per-PR group with a run-unique suffix is rejected"
 fi
 
+# ── a branch not gated on its PR number ──
+nopr_gate="${TMP}/par-nopr_gate.yml"
+write_header "$nopr_gate"
+cat >> "$nopr_gate" <<'YAML'
+concurrency:
+  group: >-
+    ${{
+    (github.event_name == 'check_suite') && format('pr-auto-review-ready-check-pr-{0}', github.event.check_suite.pull_requests[0].number)
+    || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number)
+    && format('pr-auto-review-ready-check-pr-{0}', github.event.workflow_run.pull_requests[0].number)
+    || format('pr-auto-review-ready-check-unique-{0}', github.run_id)
+    }}
+  cancel-in-progress: ${{ github.event_name == 'check_suite' || github.event_name == 'workflow_run' }}
+YAML
+write_footer "$nopr_gate"
+if run_guard "$nopr_gate"; then
+  fail "a branch not gated on its PR number should be REJECTED"
+else
+  pass "a branch not gated on its PR number is rejected"
+fi
+
+# ── branches with different group formats ──
+mixed_ns="${TMP}/par-mixed_ns.yml"
+write_header "$mixed_ns"
+cat >> "$mixed_ns" <<'YAML'
+concurrency:
+  group: >-
+    ${{
+    (github.event_name == 'check_suite' && github.event.check_suite.pull_requests[0].number)
+    && format('check-{0}', github.event.check_suite.pull_requests[0].number)
+    || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number)
+    && format('run-{0}', github.event.workflow_run.pull_requests[0].number)
+    || format('pr-auto-review-ready-check-unique-{0}', github.run_id)
+    }}
+  cancel-in-progress: ${{ github.event_name == 'check_suite' || github.event_name == 'workflow_run' }}
+YAML
+write_footer "$mixed_ns"
+if run_guard "$mixed_ns"; then
+  fail "branches with different group formats should be REJECTED"
+else
+  pass "branches with different group formats is rejected"
+fi
+
+# ── a group without expression delimiters ──
+no_delims="${TMP}/par-no_delims.yml"
+write_header "$no_delims"
+cat >> "$no_delims" <<'YAML'
+concurrency:
+  group: >-
+    (github.event_name == 'check_suite' && github.event.check_suite.pull_requests[0].number)
+    && format('pr-auto-review-ready-check-pr-{0}', github.event.check_suite.pull_requests[0].number)
+    || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number)
+    && format('pr-auto-review-ready-check-pr-{0}', github.event.workflow_run.pull_requests[0].number)
+    || format('pr-auto-review-ready-check-unique-{0}', github.run_id)
+  cancel-in-progress: ${{ github.event_name == 'check_suite' || github.event_name == 'workflow_run' }}
+YAML
+write_footer "$no_delims"
+if run_guard "$no_delims"; then
+  fail "a group without expression delimiters should be REJECTED"
+else
+  pass "a group without expression delimiters is rejected"
+fi
+
+# ── a per-PR key containing an event-specific id ──
+event_id="${TMP}/par-event_id.yml"
+write_header "$event_id"
+cat >> "$event_id" <<'YAML'
+concurrency:
+  group: >-
+    ${{
+    (github.event_name == 'check_suite' && github.event.check_suite.pull_requests[0].number)
+    && format('pr-auto-review-ready-check-pr-{0}-{1}', github.event.check_suite.pull_requests[0].number, github.event.check_suite.id)
+    || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number)
+    && format('pr-auto-review-ready-check-pr-{0}-{1}', github.event.workflow_run.pull_requests[0].number, github.event.workflow_run.id)
+    || format('pr-auto-review-ready-check-unique-{0}', github.run_id)
+    }}
+  cancel-in-progress: ${{ github.event_name == 'check_suite' || github.event_name == 'workflow_run' }}
+YAML
+write_footer "$event_id"
+if run_guard "$event_id"; then
+  fail "a per-PR key containing an event-specific id should be REJECTED"
+else
+  pass "a per-PR key containing an event-specific id is rejected"
+fi
+
 # ── Case 6: unconditional cancel-in-progress is rejected ───────────────────
 uncond="${TMP}/par-unconditional-cancel.yml"
 write_header "$uncond"
