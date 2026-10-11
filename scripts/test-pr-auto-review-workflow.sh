@@ -183,7 +183,12 @@ if [[ "$group" != "null" && -n "$group" ]]; then
   # so the run ID actually forms the group rather than appearing as an unused argument.
   fallback="${group##*||}"
   fallback_re="^[[:space:]]*format\\('[^']*\\{0\\}[^']*',[[:space:]]*github\\.run_id[[:space:]]*\\)[[:space:]]*\\}\\}[[:space:]]*$"
-  if [[ "$fallback" =~ $fallback_re ]]; then
+  fb_fmt=""
+  fb_fmt_re="format\\('([^']*)'"
+  if [[ "$fallback" =~ $fb_fmt_re ]]; then fb_fmt="${BASH_REMATCH[1]}"; fi
+  fb_unescaped="${fb_fmt//\{\{/}"
+  fb_unescaped="${fb_unescaped//\}\}/}"
+  if [[ "$fallback" =~ $fallback_re && "$fb_unescaped" == *"{0}"* ]]; then
     echo "PASS: group has a run-unique (github.run_id) fallback in $WORKFLOW"
   else
     {
@@ -210,6 +215,8 @@ fi
 # OR of the two event-name equalities (either order). A contradictory '&&' is
 # false for every event and would silently disable cancellation.
 cancel_norm="${cancel//[[:space:]]/}"
+cancel_wrapped=true
+if [[ "$cancel_norm" != '${{'*'}}' ]]; then cancel_wrapped=false; fi
 cancel_norm="${cancel_norm#\$\{\{}"
 cancel_norm="${cancel_norm%\}\}}"
 cs_eq="github.event_name=='check_suite'"
@@ -225,7 +232,7 @@ while [[ "$cancel_plain" == \(*\) ]]; do
   cancel_plain="${cancel_plain#\(}"
   cancel_plain="${cancel_plain%\)}"
 done
-if [[ "$cancel_plain" == "${cs_eq}||${wr_eq}" || "$cancel_plain" == "${wr_eq}||${cs_eq}" \
+if [[ "$cancel_wrapped" == true ]] && [[ "$cancel_plain" == "${cs_eq}||${wr_eq}" || "$cancel_plain" == "${wr_eq}||${cs_eq}" \
   || "$cancel_norm" == "${cs_one}||${wr_one}" || "$cancel_norm" == "${wr_one}||${cs_one}" \
   || "$cancel_norm" == "${cs_one_strict}||${wr_one_strict}" || "$cancel_norm" == "${wr_one_strict}||${cs_one_strict}" ]]; then
   echo "PASS: cancel-in-progress is gated on check_suite / workflow_run in $WORKFLOW"

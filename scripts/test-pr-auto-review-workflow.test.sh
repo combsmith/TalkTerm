@@ -521,6 +521,10 @@ mutant_rejected "an event-specific extra argument in one branch key" \
   "0,/ready-check-pr-{0}', github.event.check_suite.pull_requests\[0\].number/s//ready-check-pr-{0}-{1}', github.event.check_suite.pull_requests[0].number, github.event_name/"
 mutant_rejected "a check_suite branch not gated on its event name" \
   "s/github.event_name == 'check_suite' \&\& github.event.check_suite.pull_requests\[0\].number)/github.event_name == 'push' \&\& github.event.check_suite.pull_requests[0].number)/"
+mutant_rejected "an escaped {{0}} placeholder in the run_id fallback" \
+  "s/unique-{0}'/unique-{{0}}'/"
+mutant_rejected "a cancel-in-progress expression without the \${{ }} wrapper" \
+  "s/cancel-in-progress: \${{ \(.*\) }}\$/cancel-in-progress: \1/"
 
 echo ""
 if [[ "$fails" -eq 0 ]]; then
