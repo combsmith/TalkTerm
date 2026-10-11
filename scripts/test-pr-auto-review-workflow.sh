@@ -102,12 +102,31 @@ if [[ "$group" != "null" && -n "$group" ]]; then
   # fallback instead of matching a truthy format() result.
   cs_cond="${cs_part%%format(*}"
   wr_cond="${wr_part%%format(*}"
-  if [[ "$cs_cond" != *"github.event.check_suite.pull_requests[0].number"* \
+  if [[ "$cs_cond" != *"github.event_name == 'check_suite'"* \
+    || "$cs_cond" != *"github.event.check_suite.pull_requests[0].number"* \
     || "$wr_cond" != *"github.event.workflow_run.pull_requests[0].number"* ]]; then
     {
-      echo "FAIL: a per-PR concurrency branch condition does not test its PR number in $WORKFLOW"
+      echo "FAIL: a per-PR concurrency branch condition does not test its event name and PR number in $WORKFLOW"
       echo "      Gate each branch on its event's pull_requests[0].number so no-PR runs"
       echo "      reach the github.run_id fallback."
+    } >&2
+    PASS=false
+  fi
+
+  # Both branches must produce the same key: compare the complete format(...)
+  # call (string + arguments) with the event name normalised, so a branch that
+  # appends an event-specific argument cannot split the group per event type.
+  call_re="format\\('[^']*'[^)]*\\)"
+  cs_call=""
+  wr_call=""
+  if [[ "$cs_part" =~ $call_re ]]; then cs_call="${BASH_REMATCH[0]//[[:space:]]/}"; fi
+  if [[ "$wr_part" =~ $call_re ]]; then wr_call="${BASH_REMATCH[0]//[[:space:]]/}"; fi
+  cs_call="${cs_call//check_suite/EVT}"
+  wr_call="${wr_call//workflow_run/EVT}"
+  if [[ "$cs_call" != "$wr_call" ]]; then
+    {
+      echo "FAIL: check_suite and workflow_run branches build different group keys in $WORKFLOW"
+      echo "      ('$cs_call' vs '$wr_call'); both must use identical format(...) arguments."
     } >&2
     PASS=false
   fi
@@ -133,7 +152,13 @@ if [[ "$group" != "null" && -n "$group" ]]; then
   # branch's condition).
   cs_re="format\\('[^']*\\{0\\}[^']*',[[:space:]]*github\\.event\\.check_suite\\.pull_requests\\[0\\]\\.number[,)]"
   wr_re="format\\('[^']*\\{0\\}[^']*',[[:space:]]*github\\.event\\.workflow_run\\.pull_requests\\[0\\]\\.number[,)]"
-  if [[ "$group" == *"$wr_marker"* && "$cs_part" =~ $cs_re ]]; then
+  # Doubled braces are escaped literals in GitHub expressions; {0} must survive
+  # after removing them, otherwise the key is a constant.
+  cs_unescaped="${cs_fmt//\{\{/}"
+  cs_unescaped="${cs_unescaped//\}\}/}"
+  wr_unescaped="${wr_fmt//\{\{/}"
+  wr_unescaped="${wr_unescaped//\}\}/}"
+  if [[ "$group" == *"$wr_marker"* && "$cs_part" =~ $cs_re && "$cs_unescaped" == *"{0}"* ]]; then
     echo "PASS: check_suite group is keyed on the PR number in $WORKFLOW"
   else
     {
@@ -143,7 +168,7 @@ if [[ "$group" != "null" && -n "$group" ]]; then
     PASS=false
   fi
 
-  if [[ "$group" == *"$wr_marker"* && "$wr_part" =~ $wr_re ]]; then
+  if [[ "$group" == *"$wr_marker"* && "$wr_part" =~ $wr_re && "$wr_unescaped" == *"{0}"* ]]; then
     echo "PASS: workflow_run group is keyed on the PR number in $WORKFLOW"
   else
     {

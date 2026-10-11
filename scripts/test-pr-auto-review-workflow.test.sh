@@ -503,6 +503,25 @@ else
   pass "a missing workflow file is rejected"
 fi
 
+# ── Case 9: mutations of the checked-in workflow's group are rejected ─────
+mutant_rejected() {
+  local desc="$1" expr="$2" out="${TMP}/mutant.yml"
+  sed "$expr" "$real" > "$out"
+  if cmp -s "$real" "$out"; then
+    fail "mutation did not apply: $desc"
+  elif run_guard "$out"; then
+    fail "$desc should be REJECTED"
+  else
+    pass "$desc is rejected"
+  fi
+}
+mutant_rejected "escaped {{0}} placeholders in both group keys" \
+  "s/ready-check-pr-{0}'/ready-check-pr-{{0}}'/"
+mutant_rejected "an event-specific extra argument in one branch key" \
+  "0,/ready-check-pr-{0}', github.event.check_suite.pull_requests\[0\].number/s//ready-check-pr-{0}-{1}', github.event.check_suite.pull_requests[0].number, github.event_name/"
+mutant_rejected "a check_suite branch not gated on its event name" \
+  "s/github.event_name == 'check_suite' \&\& github.event.check_suite.pull_requests\[0\].number)/github.event_name == 'push' \&\& github.event.check_suite.pull_requests[0].number)/"
+
 echo ""
 if [[ "$fails" -eq 0 ]]; then
   echo "All tests passed."
