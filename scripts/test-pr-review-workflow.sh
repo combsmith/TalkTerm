@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
-# Regression guard: assert that pr-review.yml serializes redundant runs for the
-# same PR head commit via a top-level `concurrency:` block. Its overlapping
-# triggers (check_suite:completed, pull_request:synchronize,
-# pull_request_review) all fire for one commit; without concurrency they launch
-# parallel duplicate reviews, inflating duration and producing cancelled runs
-# (Fleet Monitor #374). Mirrors the convention of every sibling caller
-# (ci-failure-analyst.yml, add-to-project.yml, ...).
+# Regression guard: assert that pr-review.yml matches the invariants of the org
+# template it is synced from (petry-projects/.github
+# standards/workflows/pr-review.yml): a review job that skips Dependabot-
+# triggered events (#465).
 #
 # Run: bash scripts/test-pr-review-workflow.sh
 #
@@ -33,40 +30,22 @@ if [[ ! -f "$WORKFLOW" ]]; then
 fi
 echo "PASS: $WORKFLOW exists"
 
-# ── Check 2: a top-level concurrency block is present ──────────────────────
-group=$(yq '.concurrency.group' "$WORKFLOW" 2>/dev/null)
-if [[ "$group" == "null" || -z "$group" ]]; then
-  echo "FAIL: no top-level 'concurrency.group' block in $WORKFLOW"
-  echo "      Add one to serialize duplicate reviews of the same head SHA."
-  PASS=false
+# ── Check 2: top-level concurrency block (report only) ─────────────────────
+# The org template (petry-projects/.github standards/workflows/pr-review.yml)
+# has no stub-level block (the engine owns concurrency), while this repo's
+# stub may still carry one until the standards sync lands. Both are accepted;
+# the block is reported but never fails the guard (#533).
+has_concurrency=$(yq 'has("concurrency")' "$WORKFLOW" 2>/dev/null || echo "error")
+if [[ "$has_concurrency" == "false" ]]; then
+  echo "PASS: no stub-level 'concurrency' block in $WORKFLOW"
+elif [[ "$has_concurrency" == "true" ]]; then
+  echo "INFO: top-level 'concurrency' block present in $WORKFLOW (allowed until the standards sync)"
 else
-  echo "PASS: 'concurrency.group' block present in $WORKFLOW"
-fi
-
-# ── Check 3: the group is keyed on the PR head commit ──────────────────────
-# Grouping per head SHA lets a new commit start its own run while redundant
-# events for the *same* commit share a lane.
-if [[ "$PASS" == "true" ]]; then
-  if [[ ! "$group" =~ head\.sha && ! "$group" =~ head_sha ]]; then
-    echo "FAIL: concurrency group ($group) is not keyed on the PR head SHA in $WORKFLOW"
-    PASS=false
-  else
-    echo "PASS: concurrency group keyed on head SHA in $WORKFLOW"
-  fi
-fi
-
-# ── Check 4: cancel-in-progress is false ───────────────────────────────────
-# An in-flight review must never be interrupted; redundant same-SHA runs queue
-# and the reusable's idempotency no-ops them.
-cancel=$(yq '.concurrency.cancel-in-progress' "$WORKFLOW" 2>/dev/null)
-if [[ "$cancel" != "false" ]]; then
-  echo "FAIL: 'concurrency.cancel-in-progress' is not 'false' (found: '$cancel') in $WORKFLOW"
+  echo "FAIL: could not parse $WORKFLOW to check for a 'concurrency' block"
   PASS=false
-else
-  echo "PASS: 'concurrency.cancel-in-progress: false' present in $WORKFLOW"
 fi
 
-# ── Check 5: the review job skips Dependabot-triggered events ──────────────
+# ── Check 3: the review job skips Dependabot-triggered events ──────────────
 # Dependabot-triggered runs read the separate Dependabot secret store, so
 # `secrets: inherit` forwards empty PAT/OAuth secrets and the reusable's
 # "Verify auth scopes" step fails outright (Fleet Monitor #465). Guarding the
