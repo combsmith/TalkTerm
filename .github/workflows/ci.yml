@@ -114,6 +114,8 @@ jobs:
       - name: Run workflow regression guards
         run: |
           bash scripts/test-dependabot-rebase-workflow.sh
+          bash scripts/test-dependency-audit-workflow.sh
+          bash scripts/test-dependency-audit-workflow.test.sh
           bash scripts/test-pr-review-workflow.sh
           bash scripts/test-pr-review-workflow.test.sh
           bash scripts/test-ci-workflow.sh
