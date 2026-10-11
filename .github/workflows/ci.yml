@@ -124,4 +124,6 @@ jobs:
           bash scripts/test-copilot-setup-steps-workflow.sh
           bash scripts/test-sonarcloud-workflow.sh
           bash scripts/test-sonarcloud-workflow.test.sh
+          bash scripts/test-pr-auto-review-workflow.sh
+          bash scripts/test-pr-auto-review-workflow.test.sh
           bash scripts/apply-repo-settings.test.sh
