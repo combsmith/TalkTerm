@@ -1,29 +1,29 @@
-name: PR Review Agent
-
-# Thin caller for the org PR Review agent (petry-projects/.github-private),
-# pinned to the known-good `pr-review/stable` channel. Adopted from the validated
-# `.github-private/pr-review-trigger.yml` template (#536 consumer fan-out).
+# ─────────────────────────────────────────────────────────────────────────────
+# SOURCE OF TRUTH: petry-projects/.github/standards/workflows/pr-review.yml
+# Standard:        petry-projects/.github/standards/ci-standards.md
+# Reusable:        petry-projects/.github-private/.github/workflows/pr-review.yml
+#                  (the pr-review ENGINE — grandfathered name, not *-reusable.yml)
 #
-# - Version selection is the MOVING `pr-review/stable` tag — this file never
-#   changes on promotion; a release is rolled out by moving the tag centrally.
-#   Do NOT pin the `uses:` ref to a commit SHA here: Dependabot's github-actions
-#   updater treats a SHA-pinned reusable as a versioned dependency and auto-bumps
-#   it to the newest tag, which dragged this caller onto the unreleased `next`
-#   v1.8.0 ahead of stable (#310). A non-semver moving tag is left untouched by
-#   Dependabot, matching the other consumers (markets/ContentTwin/...).
-# - The channel-pinned `uses:` line carries the inline
-#   `# NOSONAR(githubactions:S7637)` marker — the org-wide canonical exemption
-#   for first-party reusable-ref caller stubs (#549). It suppresses SonarCloud's
-#   "pin actions to a full SHA" rule at analysis time, clearing BOTH the quality
-#   gate AND the code-scanning SARIF alert (supersedes the per-file
-#   `sonar-project.properties` exemption, which only quieted the gate).
-# - `agent_ref: pr-review/stable` pins the agent's own scripts to the same
-#   channel (#506), so the review logic AND scripts run the known-good version.
-# - Secrets are forwarded via `secrets: inherit`, matching every other pr-review
-#   caller in the org and TalkTerm's own `dev-lead.yml` (#385). The reusable reads
-#   the inherited org secrets it needs (`DON_PETRY_BOT_GH_PAT_CLASSIC`, falling
-#   back to `DON_PETRY_BOT_GH_PAT`) — a classic PAT required for approvals since
-#   fine-grained PATs cannot `addPullRequestReview`.
+# AGENTS — READ BEFORE EDITING:
+#   • This file is a THIN CALLER STUB. All review logic lives in the engine
+#     above, including concurrency (per PR + head SHA, never cancelling an
+#     in-flight review), the check_suite-without-a-PR skip, and reading
+#     `client_payload.pr_url` from repository_dispatch.
+#   • You MUST NOT change: the `@pr-review/v1-stable` channel in the `uses:`
+#     line or the matching `agent_ref` — both are re-pinned in lockstep to this
+#     repo's canary-ring tier by the standards sweep. Nor the workflow `name:`,
+#     the job id `review` (check names depend on both), the trigger event types,
+#     the Dependabot skip guard, or the job-level `permissions:` block. Do not
+#     add a stub-level `concurrency:` block.
+#   • The standards sweep only REPLACES an existing caller with this file; it
+#     never adds it to a repo that has none, and never touches
+#     petry-projects/.github-private (whose pr-review.yml is the engine).
+#   • If you need different behaviour, open a PR against the engine in
+#     petry-projects/.github-private. It reaches every repo when the channel
+#     tag is promoted.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: PR Review Agent
 
 on:
   check_suite:
@@ -31,7 +31,7 @@ on:
   pull_request_review:
     types: [submitted, dismissed]
   pull_request:
-    types: [opened, ready_for_review, reopened, synchronize]
+    types: [ready_for_review, reopened, synchronize]
   workflow_dispatch:
     inputs:
       pr_url:
@@ -53,43 +53,16 @@ on:
 
 permissions: {}
 
-# Serialize redundant runs for the same PR head commit. The overlapping triggers
-# above (check_suite:completed, pull_request:synchronize, pull_request_review)
-# all fire for one commit; without a concurrency lane they launch parallel
-# duplicate reviews, inflating run duration and producing cancelled runs
-# (Fleet Monitor #374). Grouping per head SHA lets a *new* commit start its own
-# run while same-SHA events share a lane. cancel-in-progress: false so an
-# in-flight review is never interrupted — the reusable's per-head-SHA
-# idempotency no-ops the queued duplicate. workflow_dispatch falls back to
-# pr_url, and any other event (e.g. repository_dispatch) to run_id (unique, so
-# never blocked). Matches the sibling-caller convention (ci-failure-analyst.yml).
-concurrency:
-  group: >-
-    pr-review-${{
-      github.event.pull_request.head.sha ||
-      github.event.check_suite.head_sha ||
-      github.event.inputs.pr_url ||
-      github.run_id }}
-  cancel-in-progress: false
-
 jobs:
   review:
-    # Skip Dependabot-triggered runs. Dependabot events read the separate
-    # Dependabot secret store, so `secrets: inherit` forwards EMPTY PAT/OAuth
-    # secrets and the reusable's "Verify auth scopes" step fails outright
-    # (`gh auth status failed`) — the recurring failed run behind Fleet Monitor
-    # #465. A guarded job skips (neutral), keeping the failure rate clean, and a
-    # Dependabot PR gains nothing from this reviewer anyway. A human-initiated
-    # workflow_dispatch on a Dependabot PR still runs because github.actor is
-    # then the human, not dependabot[bot].
     if: ${{ github.actor != 'dependabot[bot]' }}
     permissions:
       contents: read
       pull-requests: write
       checks: read
-    uses: petry-projects/.github-private/.github/workflows/pr-review.yml@pr-review/stable  # NOSONAR(githubactions:S7637) first-party channel ref
+    uses: petry-projects/.github-private/.github/workflows/pr-review.yml@pr-review/v1-ring1  # NOSONAR(githubactions:S7637) first-party channel ref
     with:
-      agent_ref: pr-review/stable
+      agent_ref: pr-review/v1-ring1
       pr_url: ${{ inputs.pr_url || '' }}
       dry_run: ${{ inputs.dry_run || '' }}
       force_review: ${{ inputs.force_review || '' }}
