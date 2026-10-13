@@ -18,14 +18,14 @@ echo "=== test-pr-review-workflow ==="
 
 # ── Check 0: yq is available ───────────────────────────────────────────────
 if ! command -v yq &> /dev/null; then
-  echo "FAIL: 'yq' is required to parse YAML safely but was not found."
+  echo "FAIL: 'yq' is required to parse YAML safely but was not found." >&2
   exit 1
 fi
 echo "PASS: 'yq' is available"
 
 # ── Check 1: file exists ───────────────────────────────────────────────────
 if [[ ! -f "$WORKFLOW" ]]; then
-  echo "FAIL: $WORKFLOW not found"
+  echo "FAIL: $WORKFLOW not found" >&2
   exit 1
 fi
 echo "PASS: $WORKFLOW exists"
@@ -41,7 +41,7 @@ if [[ "$has_concurrency" == "false" ]]; then
 elif [[ "$has_concurrency" == "true" ]]; then
   echo "INFO: top-level 'concurrency' block present in $WORKFLOW (allowed until the standards sync)"
 else
-  echo "FAIL: could not parse $WORKFLOW to check for a 'concurrency' block"
+  echo "FAIL: could not parse $WORKFLOW to check for a 'concurrency' block" >&2
   PASS=false
 fi
 
@@ -58,11 +58,13 @@ if ! job_if=$(yq '.jobs.review.if' "$WORKFLOW" 2>/dev/null); then
 fi
 EXPECTED_JOB_IF="\${{ github.actor != 'dependabot[bot]' }}"
 if [[ "$job_if" == "null" || -z "$job_if" ]]; then
-  echo "FAIL: 'jobs.review.if' guard is missing in $WORKFLOW"
-  echo "      Add \"if: \${{ github.actor != 'dependabot[bot]' }}\" so Dependabot runs skip."
+  {
+    echo "FAIL: 'jobs.review.if' guard is missing in $WORKFLOW"
+    echo "      Add \"if: \${{ github.actor != 'dependabot[bot]' }}\" so Dependabot runs skip."
+  } >&2
   PASS=false
 elif [[ "$job_if" != "$EXPECTED_JOB_IF" ]]; then
-  echo "FAIL: 'jobs.review.if' ($job_if) does not match the required Dependabot guard in $WORKFLOW"
+  echo "FAIL: 'jobs.review.if' ($job_if) does not match the required Dependabot guard in $WORKFLOW" >&2
   PASS=false
 else
   echo "PASS: review job skips Dependabot-triggered events in $WORKFLOW"
@@ -72,6 +74,6 @@ echo ""
 if [[ "$PASS" == "true" ]]; then
   echo "All checks passed."
 else
-  echo "One or more checks failed."
+  echo "One or more checks failed." >&2
   exit 1
 fi
