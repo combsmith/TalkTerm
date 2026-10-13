@@ -250,8 +250,10 @@ fi
 # Error messages belong on stderr (SonarCloud shelldre:S7677). Covers both an
 # early-exit failure (missing file) and a check failure (missing if: guard).
 for target in "${TMP}/does-not-exist.yml" "$noif"; do
-  out="$(bash "$GUARD" "$target" 2>/dev/null || true)"
-  err="$(bash "$GUARD" "$target" 2>&1 >/dev/null || true)"
+  out=""
+  err=""
+  if ! out="$(bash "$GUARD" "$target" 2>/dev/null)"; then :; fi
+  if ! err="$(bash "$GUARD" "$target" 2>&1 >/dev/null)"; then :; fi
   if [[ "$out" != *FAIL* && "$err" == *FAIL* ]]; then
     pass "FAIL diagnostics for $(basename "$target") are written to stderr only"
   else
