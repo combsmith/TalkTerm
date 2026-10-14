@@ -1,9 +1,9 @@
 # Repository settings for TalkTerm
 # Format: https://github.com/repository-settings/app
 #
-# This file documents the required repository settings per the petry-projects
+# This file documents the required repository settings per the combsmith
 # organization standard:
-# https://github.com/petry-projects/.github/blob/main/standards/github-settings.md
+# https://github.com/combsmith/.github/blob/main/standards/github-settings.md
 #
 # These settings are enforced via the GitHub API (scripts/apply-repo-settings.sh).
 # If the Probot GitHub Settings app is ever installed, this file will also
@@ -16,7 +16,7 @@ repository:
   has_discussions: true
 
   # --- Merge settings ---
-  # Standard: https://github.com/petry-projects/.github/blob/main/standards/github-settings.md#merge-settings
+  # Standard: https://github.com/combsmith/.github/blob/main/standards/github-settings.md#merge-settings
   allow_squash_merge: true
   allow_merge_commit: true
   allow_rebase_merge: true
@@ -30,13 +30,13 @@ repository:
   squash_merge_commit_message: COMMIT_MESSAGES
 
 # --- pr-quality ruleset: squash-only merges ---
-# Standard: https://github.com/petry-projects/.github/blob/main/standards/github-settings.md#pr-quality--standard-ruleset-all-repositories
+# Standard: https://github.com/combsmith/.github/blob/main/standards/github-settings.md#pr-quality--standard-ruleset-all-repositories
 #
 # Repo-level merge methods stay all-true (above) to avoid conflicts with admin
 # overrides; the `pr-quality` ruleset restricts the default branch to squash-only
 # via its allowed_merge_methods parameter (compliance: ruleset-drift-pr-quality-allowed_merge_methods).
 #
-# The ruleset JSON's source of truth lives in petry-projects/.github
+# The ruleset JSON's source of truth lives in combsmith/.github
 # (standards/rulesets/pr-quality.json) and is applied org-wide by apply-rulesets.sh.
 # scripts/apply-repo-settings.sh additionally reconciles allowed_merge_methods to
 # [squash], require_last_push_approval to true (compliance:
@@ -48,7 +48,7 @@ repository:
 # being merged.
 
 # --- Check suite auto-trigger ---
-# Standard: https://github.com/petry-projects/.github/blob/main/standards/github-settings.md
+# Standard: https://github.com/combsmith/.github/blob/main/standards/github-settings.md
 #
 # CodeRabbit (app_id 347564) and Claude (app_id 1236702) auto-trigger are
 # disabled to prevent GitHub from creating queued check suites on every push
@@ -59,7 +59,7 @@ repository:
 #   check_suite_auto_trigger: app_id 1236702 → false
 
 # --- Security and analysis ---
-# Standard: https://github.com/petry-projects/.github/blob/main/standards/push-protection.md#required-repo-level-settings
+# Standard: https://github.com/combsmith/.github/blob/main/standards/push-protection.md#required-repo-level-settings
 #
 # NOTE: The Probot GitHub Settings app does not support security_and_analysis fields.
 # These settings are applied via scripts/apply-repo-settings.sh, which is called by

@@ -5,7 +5,7 @@
 # for apps that queue suites on every push without completing them (Claude,
 # CodeRabbit), which permanently blocks GitHub auto-merge.
 #
-# Standard: petry-projects/.github/standards/github-settings.md
+# Standard: combsmith/.github/standards/github-settings.md
 #           #check-suite-auto-trigger-preferences
 #
 # Usage:
@@ -17,7 +17,7 @@
 #   GH_TOKEN           GitHub token. The check-suites API rejects OAuth app
 #                      tokens — use a classic PAT with `repo` scope (or admin).
 #   ORG                GitHub org used to expand a bare repo name (default:
-#                      petry-projects).
+#                      combsmith).
 #   GITHUB_REPOSITORY  owner/repo, used when no positional argument is given
 #                      (set automatically by GitHub Actions).
 #
@@ -32,19 +32,19 @@ readonly -a CHECK_SUITE_APP_IDS=(1236702 347564) # Claude, CodeRabbit
 # The pr-quality ruleset enforces squash-only merges. The repo-level merge
 # settings stay all-true (see .github/settings.yml); the ruleset restricts the
 # allowed methods on the default branch to squash only.
-# Standard: petry-projects/.github/standards/github-settings.md
+# Standard: combsmith/.github/standards/github-settings.md
 #           #pr-quality--standard-ruleset-all-repositories
 readonly PR_QUALITY_RULESET_NAME='pr-quality'
 readonly PR_QUALITY_MERGE_METHOD='squash'
 # The pr-quality ruleset requires stale approvals to be dismissed when new
 # commits are pushed, so a review always reflects the code being merged.
-# Standard: petry-projects/.github/standards/github-settings.md
+# Standard: combsmith/.github/standards/github-settings.md
 #           #pr-quality--standard-ruleset-all-repositories
 readonly PR_QUALITY_DISMISS_STALE_REVIEWS='true'
 # The pr-quality ruleset requires that the most recent push be approved by a
 # reviewer other than its pusher. Expected true; GitHub omits/defaults it to
 # false, which is the drift this reconciler corrects.
-# Standard: petry-projects/.github/standards/github-settings.md
+# Standard: combsmith/.github/standards/github-settings.md
 #           #pr-quality--standard-ruleset-all-repositories
 readonly PR_QUALITY_REQUIRE_LAST_PUSH_APPROVAL='true'
 readonly MISSING='missing'
@@ -60,7 +60,7 @@ resolve_repo() {
   [[ -z "$repo" ]] && return 1
   case "$repo" in
     */*) printf '%s' "$repo" ;;
-    *) printf '%s/%s' "${ORG:-petry-projects}" "$repo" ;;
+    *) printf '%s/%s' "${ORG:-combsmith}" "$repo" ;;
   esac
 }
 
