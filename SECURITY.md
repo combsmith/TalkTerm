@@ -12,7 +12,7 @@ If you discover a security vulnerability in this project, please report it respo
 
 **Please do NOT open a public GitHub issue for security vulnerabilities.**
 
-Instead, please send an email to [security@petry-projects.dev](mailto:security@petry-projects.dev) or use [GitHub's private vulnerability reporting](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-creating-advisories/privately-reporting-a-security-vulnerability) feature on this repository.
+Instead, please use [GitHub's private vulnerability reporting](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-creating-advisories/privately-reporting-a-security-vulnerability) feature on this repository.
 
 When reporting a vulnerability, please include:
 
