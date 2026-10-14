@@ -72,7 +72,7 @@ jobs:
         # Refresh: gh api repos/actions/setup-node/git/refs/tags/v6.4.0 --jq '.object.sha'
         # Note: cache: "npm" is intentionally omitted — it requires package-lock.json
         # and would fail until that file is committed. Re-enable once the npm project is initialised.
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
 
