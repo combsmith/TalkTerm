@@ -65,7 +65,7 @@ permissions:
   contents: read
 jobs:
   dependency-audit:
-    uses: petry-projects/.github/.github/workflows/dependency-audit-reusable.yml@dependency-audit/v2-ring1
+    uses: combsmith/.github/.github/workflows/dependency-audit-reusable.yml@dependency-audit/v2-ring1
 YAML
 }
 
@@ -95,7 +95,7 @@ fi
 # ── Case 2b: the canonical v2-stable channel is accepted ───────────────────
 v2stable="${TMP}/v2-stable.yml"
 write_canonical "$v2stable"
-yq -i '.jobs.dependency-audit.uses = "petry-projects/.github/.github/workflows/dependency-audit-reusable.yml@dependency-audit/v2-stable"' "$v2stable"
+yq -i '.jobs.dependency-audit.uses = "combsmith/.github/.github/workflows/dependency-audit-reusable.yml@dependency-audit/v2-stable"' "$v2stable"
 if run_guard "$v2stable"; then
   pass "a uses: on the canonical dependency-audit/v2-stable channel is accepted"
 else
@@ -105,7 +105,7 @@ fi
 # ── Case 3: `uses:` repointed off the approved channel is rejected ─────────
 offchannel="${TMP}/off-channel.yml"
 write_canonical "$offchannel"
-yq -i '.jobs.dependency-audit.uses = "petry-projects/.github/.github/workflows/dependency-audit-reusable.yml@main"' "$offchannel"
+yq -i '.jobs.dependency-audit.uses = "combsmith/.github/.github/workflows/dependency-audit-reusable.yml@main"' "$offchannel"
 if run_guard "$offchannel"; then
   fail "a uses: pinned to @main (off approved channel) should be REJECTED"
 else
@@ -285,7 +285,7 @@ fi
 # ── Case 15f: a lexically valid but non-existent channel is rejected ───────
 fakechan="${TMP}/fake-channel.yml"
 write_canonical "$fakechan"
-yq -i '.jobs.dependency-audit.uses = "petry-projects/.github/.github/workflows/dependency-audit-reusable.yml@dependency-audit/v999-ring999"' "$fakechan"
+yq -i '.jobs.dependency-audit.uses = "combsmith/.github/.github/workflows/dependency-audit-reusable.yml@dependency-audit/v999-ring999"' "$fakechan"
 if run_guard "$fakechan"; then
   fail "a non-existent channel (v999-ring999) should be REJECTED"
 else

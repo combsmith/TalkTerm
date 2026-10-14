@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# gitleaks config for petry-projects/TalkTerm
+# gitleaks config for combsmith/TalkTerm
 #
 # Loaded explicitly by the `Run gitleaks (CLI — full-history enforcement)` step
 # in .github/workflows/ci.yml (`--config .gitleaks.toml`). Its purpose is to
@@ -22,7 +22,7 @@
 # belt-and-suspenders fallback for anything not covered here.
 # ─────────────────────────────────────────────────────────────────────────────
 
-title = "gitleaks config for petry-projects/TalkTerm"
+title = "gitleaks config for combsmith/TalkTerm"
 
 [extend]
 # Keep every default gitleaks rule; these allowlists only carve out reviewed
