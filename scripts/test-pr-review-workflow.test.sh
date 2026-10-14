@@ -73,7 +73,7 @@ YAML
       contents: read
       pull-requests: write
       checks: read
-    uses: petry-projects/.github-private/.github/workflows/pr-review.yml@pr-review/stable
+    uses: combsmith/.github-private/.github/workflows/pr-review.yml@pr-review/stable
     secrets: inherit
 YAML
 }

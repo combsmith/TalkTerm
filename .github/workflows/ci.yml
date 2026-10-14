@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Standard: petry-projects/.github/standards/push-protection.md#layer-3
+# Standard: combsmith/.github/standards/push-protection.md#layer-3
 #
 # Primary CI workflow. Runs on every push to main and every pull request.
 # The `secret-scan` job is a required check — it must stay in this file and
@@ -115,7 +115,7 @@ jobs:
     steps:
       - name: Checkout (full history)
         # Pin to SHA per Action Pinning Policy
-        # (petry-projects/.github/standards/ci-standards.md#action-pinning-policy).
+        # (combsmith/.github/standards/ci-standards.md#action-pinning-policy).
         # Refresh: gh api repos/actions/checkout/git/refs/tags/v6.0.2 --jq '.object.sha'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -129,7 +129,7 @@ jobs:
       # step below handles redaction for the enforcement scan.
       - name: Run gitleaks (action)
         # Pinned to SHA per Action Pinning Policy
-        # (petry-projects/.github/standards/ci-standards.md#action-pinning-policy).
+        # (combsmith/.github/standards/ci-standards.md#action-pinning-policy).
         # Refresh: gh api repos/gitleaks/gitleaks-action/git/refs/tags/v3.0.0 --jq '.object.sha'
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         continue-on-error: true
