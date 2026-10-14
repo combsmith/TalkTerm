@@ -2,7 +2,7 @@
 # test-pr-review-workflow.test.sh — portable tests for the pr-review.yml
 # regression guard (scripts/test-pr-review-workflow.sh). The guard asserts the
 # invariants of the thin caller stub synced from the org template
-# (petry-projects/.github standards/workflows/pr-review.yml): a review-job
+# (combsmith/.github standards/workflows/pr-review.yml): a review-job
 # guard that skips Dependabot-triggered runs (#465); a top-level `concurrency:`
 # block is neither required nor forbidden (#533). Dependabot events read the separate Dependabot secret store, so
 # `secrets: inherit` forwards empty PAT/OAuth secrets and the reusable's
@@ -68,7 +68,7 @@ YAML
       contents: read
       pull-requests: write
       checks: read
-    uses: petry-projects/.github-private/.github/workflows/pr-review.yml@pr-review/stable
+    uses: combsmith/.github-private/.github/workflows/pr-review.yml@pr-review/stable
     secrets: inherit
 YAML
 }
@@ -164,16 +164,16 @@ else
 fi
 
 # ── Case 9: the org template itself is accepted (#533) ─────────────────────
-# Vendored copy of petry-projects/.github standards/workflows/pr-review.yml
+# Vendored copy of combsmith/.github standards/workflows/pr-review.yml
 # (fetched 2026-10-11), inlined so the test needs no network access or token.
 # Every standards sync replaces .github/workflows/pr-review.yml with this file,
 # so the guard must accept it. Refresh this copy when the template changes.
 template="${TMP}/org-template.yml"
 cat > "$template" <<'YAML'
 # ─────────────────────────────────────────────────────────────────────────────
-# SOURCE OF TRUTH: petry-projects/.github/standards/workflows/pr-review.yml
-# Standard:        petry-projects/.github/standards/ci-standards.md
-# Reusable:        petry-projects/.github-private/.github/workflows/pr-review.yml
+# SOURCE OF TRUTH: combsmith/.github/standards/workflows/pr-review.yml
+# Standard:        combsmith/.github/standards/ci-standards.md
+# Reusable:        combsmith/.github-private/.github/workflows/pr-review.yml
 #                  (the pr-review ENGINE — grandfathered name, not *-reusable.yml)
 #
 # AGENTS — READ BEFORE EDITING:
@@ -189,9 +189,9 @@ cat > "$template" <<'YAML'
 #     add a stub-level `concurrency:` block.
 #   • The standards sweep only REPLACES an existing caller with this file; it
 #     never adds it to a repo that has none, and never touches
-#     petry-projects/.github-private (whose pr-review.yml is the engine).
+#     combsmith/.github-private (whose pr-review.yml is the engine).
 #   • If you need different behaviour, open a PR against the engine in
-#     petry-projects/.github-private. It reaches every repo when the channel
+#     combsmith/.github-private. It reaches every repo when the channel
 #     tag is promoted.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -232,7 +232,7 @@ jobs:
       contents: read
       pull-requests: write
       checks: read
-    uses: petry-projects/.github-private/.github/workflows/pr-review.yml@pr-review/v1-stable  # NOSONAR(githubactions:S7637) first-party channel ref
+    uses: combsmith/.github-private/.github/workflows/pr-review.yml@pr-review/v1-stable  # NOSONAR(githubactions:S7637) first-party channel ref
     with:
       agent_ref: pr-review/v1-stable
       pr_url: ${{ inputs.pr_url || '' }}

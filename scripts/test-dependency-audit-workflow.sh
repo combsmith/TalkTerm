@@ -2,7 +2,7 @@
 # Regression guard: assert that dependency-audit.yml keeps the centrally-owned
 # invariants its own header marks as MUST-NOT-CHANGE. The file is a thin caller
 # stub for the org reusable
-# petry-projects/.github/.github/workflows/dependency-audit-reusable.yml; the
+# combsmith/.github/.github/workflows/dependency-audit-reusable.yml; the
 # ecosystem-detection and audit logic lives there, not here.
 #
 # Context (compliance audit #519): the stub's `on:` surface drifted from the
@@ -22,7 +22,7 @@ set -euo pipefail
 
 WORKFLOW="${1:-.github/workflows/dependency-audit.yml}"
 JOB="dependency-audit"
-REUSABLE_PREFIX="petry-projects/.github/.github/workflows/dependency-audit-reusable.yml@"
+REUSABLE_PREFIX="combsmith/.github/.github/workflows/dependency-audit-reusable.yml@"
 PASS=true
 
 echo "=== test-dependency-audit-workflow ($WORKFLOW) ==="

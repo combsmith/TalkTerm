@@ -2,7 +2,7 @@
 # Regression guard for pr-auto-review.yml. Locks the event-dependent concurrency
 # contract of the thin caller stub (issues #1126, #508) so a future edit cannot
 # silently change its deduplication or cancellation behaviour. The stub is synced
-# verbatim from petry-projects/.github/standards/workflows/pr-auto-review.yml, so
+# verbatim from combsmith/.github/standards/workflows/pr-auto-review.yml, so
 # this guard enforces the canonical policy:
 #
 #   The stub fans out on check_suite / workflow_run / pull_request(_review). To

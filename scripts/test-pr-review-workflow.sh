@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Regression guard: assert that pr-review.yml matches the invariants of the org
-# template it is synced from (petry-projects/.github
+# template it is synced from (combsmith/.github
 # standards/workflows/pr-review.yml): a review job that skips Dependabot-
 # triggered events (#465).
 #
@@ -31,7 +31,7 @@ fi
 echo "PASS: $WORKFLOW exists"
 
 # ── Check 2: top-level concurrency block (report only) ─────────────────────
-# The org template (petry-projects/.github standards/workflows/pr-review.yml)
+# The org template (combsmith/.github standards/workflows/pr-review.yml)
 # has no stub-level block (the engine owns concurrency), while this repo's
 # stub may still carry one until the standards sync lands. Both are accepted;
 # the block is reported but never fails the guard (#533).
