@@ -2,7 +2,7 @@
 
 This file is the single source of truth for all implementation agents working on TalkTerm. It enforces SDLC best practices, coding standards, and architectural rules. Every story implementation, code review, and PR must comply with these rules.
 
-> **Organization standards:** This repo inherits shared standards from [combsmith/.github/AGENTS.md](https://github.com/combsmith/.github/blob/main/AGENTS.md). The sections below are project-specific.
+> **Organization standards:** This repo inherits shared standards from [petry-projects/.github/AGENTS.md](https://github.com/petry-projects/.github/blob/main/AGENTS.md). The sections below are project-specific.
 
 ---
 
@@ -18,7 +18,7 @@ TalkTerm is a desktop AI agent interface (Electron + React + TypeScript) that ma
 
 ## 1. Test-Driven Development (TDD)
 
-> **Extends org-wide TDD standards.** See [shared AGENTS.md](https://github.com/combsmith/.github/blob/main/AGENTS.md) for mandatory TDD workflow, coverage rules, and prohibited patterns (`.skip()`, coverage-ignore).
+> **Extends org-wide TDD standards.** See [shared AGENTS.md](https://github.com/petry-projects/.github/blob/main/AGENTS.md) for mandatory TDD workflow, coverage rules, and prohibited patterns (`.skip()`, coverage-ignore).
 > **Workflow and checklist (planned):** `.claude/rules/tdd-sequence.md` *(not yet created)*
 
 ### Testing Framework & Configuration
@@ -167,7 +167,7 @@ Plus: `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverr
 
 ## 7. CI Quality Gates (GitHub Actions)
 
-> **Extends org-wide CI gate standards.** See [shared AGENTS.md](https://github.com/combsmith/.github/blob/main/AGENTS.md) for iterate-until-green policy. Project-specific gates:
+> **Extends org-wide CI gate standards.** See [shared AGENTS.md](https://github.com/petry-projects/.github/blob/main/AGENTS.md) for iterate-until-green policy. Project-specific gates:
 
 | Gate | Command | Threshold |
 |------|---------|-----------|

@@ -81,7 +81,7 @@ YAML
   } > "$file"
 }
 
-REUSABLE_REF="combsmith/.github/.github/workflows/pr-auto-review-reusable.yml@pr-auto-review/v1-ring1"
+REUSABLE_REF="petry-projects/.github/.github/workflows/pr-auto-review-reusable.yml@pr-auto-review/v1-ring1"
 GOOD_IF="!(github.event_name == 'pull_request' && github.actor == 'dependabot[bot]')"
 
 run_guard() {
@@ -148,7 +148,7 @@ fi
 
 # ── Case 7: a stub that no longer references the reusable is rejected ───────
 noreusable="${TMP}/no-reusable.yml"
-write_fixture "$noreusable" "$GOOD_IF" "combsmith/.github/.github/workflows/some-other-reusable.yml@main"
+write_fixture "$noreusable" "$GOOD_IF" "petry-projects/.github/.github/workflows/some-other-reusable.yml@main"
 if run_guard "$noreusable"; then
   fail "a stub that no longer delegates to the reusable should be REJECTED"
 else
@@ -187,14 +187,14 @@ jobs:
     if: "!(github.event_name == 'pull_request' && github.actor == 'dependabot[bot]')"
     permissions:
       pull-requests: read
-    uses: combsmith/.github/.github/workflows/pr-auto-review-reusable.yml@pr-auto-review/v1-ring1
+    uses: petry-projects/.github/.github/workflows/pr-auto-review-reusable.yml@pr-auto-review/v1-ring1
     secrets:
       GH_PAT_WORKFLOWS: ${{ secrets.GH_PAT_WORKFLOWS }}
   pr-auto-review-2:
     if: "!(github.event_name == 'pull_request' && github.actor == 'dependabot[bot]')"
     permissions:
       pull-requests: read
-    uses: combsmith/.github/.github/workflows/pr-auto-review-reusable.yml@pr-auto-review/v1-ring1
+    uses: petry-projects/.github/.github/workflows/pr-auto-review-reusable.yml@pr-auto-review/v1-ring1
     secrets:
       GH_PAT_WORKFLOWS: ${{ secrets.GH_PAT_WORKFLOWS }}
 YAML

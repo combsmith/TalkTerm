@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Standard: combsmith/.github/standards/push-protection.md#required-repo-level-settings
+# Standard: petry-projects/.github/standards/push-protection.md#required-repo-level-settings
 #
 # Applies repository-level settings via scripts/apply-repo-settings.sh on every
 # push to main and on a weekly schedule (Mon 03:00 UTC) so that settings
@@ -43,7 +43,7 @@ jobs:
     steps:
       - name: Checkout
         # Pinned to SHA per Action Pinning Policy
-        # (combsmith/.github/standards/ci-standards.md#action-pinning-policy).
+        # (petry-projects/.github/standards/ci-standards.md#action-pinning-policy).
         # Refresh: gh api repos/actions/checkout/git/refs/tags/v6.0.2 --jq '.object.sha'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 

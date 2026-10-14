@@ -1,4 +1,4 @@
-@https://github.com/combsmith/.github/blob/main/AGENTS.md
+@https://github.com/petry-projects/.github/blob/main/AGENTS.md
 @AGENTS.md
 
 # TalkTerm — Claude Code Project Context

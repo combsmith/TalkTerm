@@ -25,7 +25,7 @@ set -euo pipefail
 
 WORKFLOW="${1:-.github/workflows/pr-auto-review.yml}"
 REUSABLE="pr-auto-review-reusable"
-REUSABLE_ORG_PATH="combsmith/.github/.github/workflows"
+REUSABLE_ORG_PATH="petry-projects/.github/.github/workflows"
 PASS=true
 
 echo "=== test-pr-auto-review-workflow ==="
