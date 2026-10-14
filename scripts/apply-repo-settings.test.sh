@@ -219,13 +219,13 @@ assert_eq "pr_quality_merge_methods_status: empty string -> missing" \
 
 # ── resolve_repo ──────────────────────────────────────────────────────────────
 assert_eq "resolve_repo: bare name -> org/name" \
-  "combsmith/TalkTerm" "$(ORG=combsmith resolve_repo "TalkTerm")"
+  "petry-projects/TalkTerm" "$(ORG=petry-projects resolve_repo "TalkTerm")"
 assert_eq "resolve_repo: owner/repo passthrough" \
-  "acme/widgets" "$(ORG=combsmith resolve_repo "acme/widgets")"
+  "acme/widgets" "$(ORG=petry-projects resolve_repo "acme/widgets")"
 assert_eq "resolve_repo: GITHUB_REPOSITORY fallback" \
-  "combsmith/TalkTerm" "$(ORG=combsmith GITHUB_REPOSITORY=combsmith/TalkTerm resolve_repo "")"
+  "petry-projects/TalkTerm" "$(ORG=petry-projects GITHUB_REPOSITORY=petry-projects/TalkTerm resolve_repo "")"
 assert_eq "resolve_repo: REPO env fallback" \
-  "combsmith/TalkTerm" "$(ORG=combsmith REPO=combsmith/TalkTerm resolve_repo "")"
+  "petry-projects/TalkTerm" "$(ORG=petry-projects REPO=petry-projects/TalkTerm resolve_repo "")"
 
 if [[ "$fails" -eq 0 ]]; then
   echo "All tests passed."

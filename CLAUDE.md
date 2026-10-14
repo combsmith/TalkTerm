@@ -1,9 +1,9 @@
-@https://github.com/combsmith/.github/blob/main/AGENTS.md
+@https://github.com/petry-projects/.github/blob/main/AGENTS.md
 @AGENTS.md
 
 # TalkTerm — Claude Code Project Context
 
-This file extends the [combsmith organization standards](https://github.com/combsmith/.github/blob/main/AGENTS.md) with TalkTerm-specific guidance. **Read the org-level AGENTS.md first** — it defines TDD, SOLID, CLEAN, DRY, DDD, KISS, YAGNI, pre-commit checks, CI gates, BMAD workflow, and multi-agent isolation rules that apply to all repositories.
+This file extends the [petry-projects organization standards](https://github.com/petry-projects/.github/blob/main/AGENTS.md) with TalkTerm-specific guidance. **Read the org-level AGENTS.md first** — it defines TDD, SOLID, CLEAN, DRY, DDD, KISS, YAGNI, pre-commit checks, CI gates, BMAD workflow, and multi-agent isolation rules that apply to all repositories.
 
 > If a rule here conflicts with the org-level AGENTS.md, the rule here takes precedence.
 
@@ -305,7 +305,7 @@ npm run build     → electron-forge make
 
 ## References
 
-- **Org Standards:** [combsmith AGENTS.md](https://github.com/combsmith/.github/blob/main/AGENTS.md)
+- **Org Standards:** [petry-projects AGENTS.md](https://github.com/petry-projects/.github/blob/main/AGENTS.md)
 - **PRD:** `_bmad-output/planning-artifacts/prd.md` (v2.2)
 - **Architecture:** `_bmad-output/planning-artifacts/architecture.md`
 - **UX Design:** `_bmad-output/planning-artifacts/ux-design-specification.md` (v1.5)

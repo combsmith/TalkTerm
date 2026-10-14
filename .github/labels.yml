@@ -1,6 +1,6 @@
-# Standard label set for combsmith repositories.
+# Standard label set for petry-projects repositories.
 # Matches the required labels defined in:
-# https://github.com/combsmith/.github/blob/main/standards/github-settings.md#labels--standard-set
+# https://github.com/petry-projects/.github/blob/main/standards/github-settings.md#labels--standard-set
 
 - name: security
   color: 'd93f0b'
