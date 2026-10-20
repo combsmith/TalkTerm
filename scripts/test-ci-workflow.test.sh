@@ -92,8 +92,8 @@ append_correct_yq() {
         env:
           YQ_VERSION: v4.44.6
         run: |
-          curl -sSfL --retry 3 --retry-delay 2 --retry-all-errors "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o /tmp/yq
-          EXPECTED=$(curl -sSfL --retry 3 --retry-delay 2 --retry-all-errors "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/checksums" | grep "^yq_linux_amd64  " | awk '{print $19}')
+          curl -sSfL --proto '=https' --retry 3 --retry-delay 2 --retry-all-errors "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o /tmp/yq
+          EXPECTED=$(curl -sSfL --proto '=https' --retry 3 --retry-delay 2 --retry-all-errors "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/checksums" | grep "^yq_linux_amd64  " | awk '{print $19}')
           echo "${EXPECTED}  /tmp/yq" | sha256sum --check
 YAML
 }
@@ -218,10 +218,10 @@ append_curl_with_retry_multiline() {
         env:
           YQ_VERSION: v4.44.6
         run: |
-          curl -sSfL --retry 3 --retry-delay 2 --retry-all-errors \
+          curl -sSfL --proto '=https' --retry 3 --retry-delay 2 --retry-all-errors \
             "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" \
             -o /tmp/yq
-          EXPECTED=$(curl -sSfL --retry 3 --retry-delay 2 --retry-all-errors \
+          EXPECTED=$(curl -sSfL --proto '=https' --retry 3 --retry-delay 2 --retry-all-errors \
             "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/checksums" \
             | grep "^yq_linux_amd64  " | awk '{print $19}')
           echo "${EXPECTED}  /tmp/yq" | sha256sum --check
@@ -241,7 +241,7 @@ append_curl_without_retry_chained() {
     steps:
       - name: Download tools
         run: |
-          curl -sSfL "https://example.com/tool" -o /tmp/tool && curl -sSfL --retry 3 --retry-delay 2 --retry-all-errors "https://example.com/checksums" -o /tmp/checksums
+          curl -sSfL "https://example.com/tool" -o /tmp/tool && curl -sSfL --proto '=https' --retry 3 --retry-delay 2 --retry-all-errors "https://example.com/checksums" -o /tmp/checksums
 YAML
 }
 
@@ -259,13 +259,66 @@ append_correct_yq_with_unnamed_step() {
         env:
           YQ_VERSION: v4.44.6
         run: |
-          curl -sSfL --retry 3 --retry-delay 2 --retry-all-errors "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o /tmp/yq
-          EXPECTED=$(curl -sSfL --retry 3 --retry-delay 2 --retry-all-errors "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/checksums" | grep "^yq_linux_amd64  " | awk '{print $19}')
+          curl -sSfL --proto '=https' --retry 3 --retry-delay 2 --retry-all-errors "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o /tmp/yq
+          EXPECTED=$(curl -sSfL --proto '=https' --retry 3 --retry-delay 2 --retry-all-errors "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/checksums" | grep "^yq_linux_amd64  " | awk '{print $19}')
           echo "${EXPECTED}  /tmp/yq" | sha256sum --check
       - run: |
           # unnamed step with suspicious content — guard must ignore it
           echo "grep 'yq_linux_amd64$' | awk '{print $1}'"
 YAML
+}
+
+# A job whose curl downloads retry but do not restrict protocols to HTTPS. A
+# redirect could then downgrade the download to plain HTTP (SonarCloud
+# githubactions:S6506, #552). ONLY the missing --proto '=https' (Check 10)
+# differentiates this fixture from append_curl_with_retry_multiline.
+append_curl_without_proto() {
+  local file="$1"
+  cat >> "$file" <<'YAML'
+  workflow-tests:
+    name: Workflow regression guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install yq
+        env:
+          YQ_VERSION: v4.44.6
+        run: |
+          curl -sSfL --retry 3 --retry-delay 2 --retry-all-errors \
+            "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" \
+            -o /tmp/yq
+          EXPECTED=$(curl -sSfL --retry 3 --retry-delay 2 --retry-all-errors \
+            "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/checksums" \
+            | grep "^yq_linux_amd64  " | awk '{print $19}')
+          echo "${EXPECTED}  /tmp/yq" | sha256sum --check
+YAML
+}
+
+# A step where a curl without --proto '=https' is chained (&&) with one that has
+# it. The guard must evaluate each chained curl independently.
+append_curl_without_proto_chained() {
+  local file="$1"
+  cat >> "$file" <<'YAML'
+  workflow-tests:
+    name: Workflow regression guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download tools
+        run: |
+          curl -sSfL --retry 3 "https://example.com/tool" -o /tmp/tool && curl -sSfL --proto '=https' --retry 3 "https://example.com/checksums" -o /tmp/checksums
+YAML
+}
+
+# A single-step job whose run body is the curl line given as $2.
+append_curl_line() {
+  local file="$1" line="$2"
+  {
+    printf '%s\n' '  workflow-tests:' '    name: Workflow regression guards' \
+      '    runs-on: ubuntu-latest' '    timeout-minutes: 10' '    steps:' \
+      '      - name: Download tools' '        run: |'
+    printf '          %s\n' "$line"
+  } >> "$file"
 }
 
 # A gitleaks CLI enforcement step that runs a full-history scan but passes NO
@@ -806,6 +859,44 @@ if run_guard "$ff_none"; then
 else
   fail "workflow without a matrix strategy should pass"
 fi
+
+# ── Case 29: curl without --proto '=https' is rejected (S6506, #552) ──────────
+noproto="${TMP}/ci-noproto.yml"
+write_header "$noproto"
+append_curl_without_proto "$noproto"
+if run_guard "$noproto"; then
+  fail "curl download without --proto '=https' should be REJECTED"
+else
+  pass "curl download without --proto '=https' is rejected"
+fi
+
+# ── Case 30: curl without --proto chained (&&) with one that has it — rejected ─
+noproto_chained="${TMP}/ci-noproto-chained.yml"
+write_header "$noproto_chained"
+append_curl_without_proto_chained "$noproto_chained"
+if run_guard "$noproto_chained"; then
+  fail "curl without --proto '=https' chained with one that has it should be REJECTED"
+else
+  pass "curl without --proto '=https' chained with one that has it is rejected"
+fi
+
+# ── Cases 31-33: --proto must be real and effective (Check 10) ───────────────
+proto_case() {
+  local label="$1" expect="$2" line="$3" f
+  f="${TMP}/ci-proto-${label}.yml"
+  write_header "$f"
+  append_curl_line "$f" "$line"
+  if run_guard "$f"; then
+    [[ "$expect" == "pass" ]] && pass "$label accepted" || fail "$label should be REJECTED"
+  else
+    [[ "$expect" == "fail" ]] && pass "$label rejected" || fail "$label should be accepted"
+  fi
+}
+proto_case comment-only fail "curl -sSfL --retry 3 https://example.com/tool -o tool # --proto '=https'"
+proto_case last-wins fail "curl -sSfL --retry 3 --proto '=https' --proto '=all' https://example.com/tool"
+proto_case last-https pass "curl -sSfL --retry 3 --proto '=all' --proto '=https' https://example.com/tool"
+proto_case equals-form pass "curl -sSfL --retry 3 --proto='=https' https://example.com/tool"
+proto_case hash-in-url pass "curl -sSfL --retry 3 --proto '=https' 'https://example.com/a#b' -o t"
 
 echo ""
 if [[ "$fails" -eq 0 ]]; then
