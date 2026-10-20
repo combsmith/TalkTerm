@@ -29,6 +29,9 @@
 #      first failing matrix leg cancels its siblings, which land as cancelled
 #      runs and discard the other OSes' results — inflating the Fleet Monitor
 #      cancelled/failure metrics and hiding per-OS signal. See Check 9.
+#   7. (#552) every `curl` download passes `--proto '=https'`, so a followed
+#      redirect cannot downgrade it to plain HTTP (SonarCloud
+#      githubactions:S6506). See Check 10.
 #
 # Accepts an optional workflow path (default: .github/workflows/ci.yml) so the
 # checks can be exercised against fixtures — see test-ci-workflow.test.sh.
@@ -380,6 +383,31 @@ done <<< "$matrix_job_names"
 
 if [[ "$any_matrix" == "false" ]]; then
   echo "PASS: no matrix strategy in $WORKFLOW — fail-fast check not applicable"
+fi
+
+# ── Check 10: every `curl` download is restricted to HTTPS ─────────────────
+# SonarCloud githubactions:S6506 (#552): `curl -L` follows redirects to any
+# protocol, so an https:// URL can be redirected to plain http:// and the
+# download fetched in cleartext. `--proto '=https'` restricts every request —
+# including followed redirects — to HTTPS. Reuses Check 6's folded, split
+# commands so each chained curl is evaluated independently. No-op when the
+# workflow contains no curl.
+curl_missing_proto=false
+while IFS= read -r line; do
+  if grep -Eq '(^|[^[:alnum:]_-])curl([[:space:]]|$)' <<< "$line" \
+    && ! grep -Eq -- "--proto[[:space:]=]+['\"]?=https['\"]?([[:space:]]|$)" <<< "$line"; then
+    curl_missing_proto=true
+  fi
+done <<< "$split_commands"
+
+if [[ "$curl_missing_proto" == "true" ]]; then
+  echo "FAIL: a 'curl' download in $WORKFLOW does not pass \"--proto '=https'\"."
+  echo "      Following a redirect could then downgrade the download to plain"
+  echo "      HTTP (SonarCloud githubactions:S6506). Add \"--proto '=https'\" to"
+  echo "      every curl."
+  PASS=false
+else
+  echo "PASS: every 'curl' download is restricted to HTTPS in $WORKFLOW"
 fi
 
 echo ""
