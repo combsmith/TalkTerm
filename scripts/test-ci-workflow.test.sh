@@ -310,6 +310,17 @@ append_curl_without_proto_chained() {
 YAML
 }
 
+# A single-step job whose run body is the curl line given as $2.
+append_curl_line() {
+  local file="$1" line="$2"
+  {
+    printf '%s\n' '  workflow-tests:' '    name: Workflow regression guards' \
+      '    runs-on: ubuntu-latest' '    timeout-minutes: 10' '    steps:' \
+      '      - name: Download tools' '        run: |'
+    printf '          %s\n' "$line"
+  } >> "$file"
+}
+
 # A gitleaks CLI enforcement step that runs a full-history scan but passes NO
 # --config. Root cause of Fleet Monitor #474: without a committed --config the
 # scan suppresses false positives only via .gitleaksignore commit-SHA
@@ -868,6 +879,24 @@ if run_guard "$noproto_chained"; then
 else
   pass "curl without --proto '=https' chained with one that has it is rejected"
 fi
+
+# ── Cases 31-33: --proto must be real and effective (Check 10) ───────────────
+proto_case() {
+  local label="$1" expect="$2" line="$3" f
+  f="${TMP}/ci-proto-${label}.yml"
+  write_header "$f"
+  append_curl_line "$f" "$line"
+  if run_guard "$f"; then
+    [[ "$expect" == "pass" ]] && pass "$label accepted" || fail "$label should be REJECTED"
+  else
+    [[ "$expect" == "fail" ]] && pass "$label rejected" || fail "$label should be accepted"
+  fi
+}
+proto_case comment-only fail "curl -sSfL --retry 3 https://example.com/tool -o tool # --proto '=https'"
+proto_case last-wins fail "curl -sSfL --retry 3 --proto '=https' --proto '=all' https://example.com/tool"
+proto_case last-https pass "curl -sSfL --retry 3 --proto '=all' --proto '=https' https://example.com/tool"
+proto_case equals-form pass "curl -sSfL --retry 3 --proto='=https' https://example.com/tool"
+proto_case hash-in-url pass "curl -sSfL --retry 3 --proto '=https' 'https://example.com/a#b' -o t"
 
 echo ""
 if [[ "$fails" -eq 0 ]]; then

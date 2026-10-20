@@ -389,16 +389,92 @@ fi
 # SonarCloud githubactions:S6506 (#552): `curl -L` follows redirects to any
 # protocol, so an https:// URL can be redirected to plain http:// and the
 # download fetched in cleartext. `--proto '=https'` restricts every request —
-# including followed redirects — to HTTPS. Reuses Check 6's folded, split
-# commands so each chained curl is evaluated independently. No-op when the
+# including followed redirects — to HTTPS. Unlike Check 6, this one tokenizes
+# the shell (quotes honoured, `#` comments dropped when they begin an unquoted
+# word, `&&`/`||`/`;`/`|` split commands) so that text inside a comment cannot
+# satisfy the check, and curl uses the LAST `--proto` given, so only the final
+# value is judged. `curl` must be an exact executable token. No-op when the
 # workflow contains no curl.
-curl_missing_proto=false
-while IFS= read -r line; do
-  if grep -Eq '(^|[^[:alnum:]_-])curl([[:space:]]|$)' <<< "$line" \
-    && ! grep -Eq -- "--proto[[:space:]=]+['\"]?=https['\"]?([[:space:]]|$)" <<< "$line"; then
-    curl_missing_proto=true
+curl_proto_bad=false
+
+# Judge one tokenized command (args: tokens). Sets curl_proto_bad when it runs
+# curl without an effective final `--proto =https`.
+judge_curl_command() {
+  local i tok proto="" found=false
+  for ((i = 1; i <= $#; i++)); do
+    tok="${!i}"
+    if [[ "$found" == "false" ]]; then
+      tok="${tok##*\$(}"
+      tok="${tok##*\`}"
+      tok="${tok#(}"
+      [[ "$tok" == "curl" ]] && found=true
+      continue
+    fi
+    if [[ "$tok" == "--proto" ]]; then
+      i=$((i + 1))
+      proto="${!i:-}"
+    elif [[ "$tok" == --proto=* ]]; then
+      proto="${tok#--proto=}"
+    fi
+  done
+  if [[ "$found" == "true" && "$proto" != "=https" ]]; then
+    curl_proto_bad=true
   fi
-done <<< "$split_commands"
+}
+
+# Tokenize each line of $1 and judge every command found in it.
+scan_curl_proto() {
+  local text="$1" line c i quote word has_word
+  local -a toks
+  while IFS= read -r line; do
+    toks=()
+    quote=""
+    word=""
+    has_word=false
+    for ((i = 0; i < ${#line}; i++)); do
+      c="${line:i:1}"
+      if [[ "$quote" == "'" ]]; then
+        if [[ "$c" == "'" ]]; then quote=""; else word+="$c"; fi
+      elif [[ "$quote" == '"' ]]; then
+        if [[ "$c" == '"' ]]; then
+          quote=""
+        elif [[ "$c" == "\\" && $((i + 1)) -lt ${#line} ]]; then
+          i=$((i + 1))
+          word+="${line:i:1}"
+        else
+          word+="$c"
+        fi
+      elif [[ "$c" == "'" || "$c" == '"' ]]; then
+        quote="$c"
+        has_word=true
+      elif [[ "$c" == "\\" && $((i + 1)) -lt ${#line} ]]; then
+        i=$((i + 1))
+        word+="${line:i:1}"
+        has_word=true
+      elif [[ "$c" == "#" && "$has_word" == "false" ]]; then
+        break
+      elif [[ "$c" == [[:space:]] ]]; then
+        if [[ "$has_word" == "true" ]]; then toks+=("$word"); fi
+        word=""
+        has_word=false
+      elif [[ "$c" == "&" || "$c" == "|" || "$c" == ";" ]]; then
+        if [[ "$has_word" == "true" ]]; then toks+=("$word"); fi
+        word=""
+        has_word=false
+        if [[ ${#toks[@]} -gt 0 ]]; then judge_curl_command "${toks[@]}"; fi
+        toks=()
+      else
+        word+="$c"
+        has_word=true
+      fi
+    done
+    if [[ "$has_word" == "true" ]]; then toks+=("$word"); fi
+    if [[ ${#toks[@]} -gt 0 ]]; then judge_curl_command "${toks[@]}"; fi
+  done <<< "$text"
+}
+
+scan_curl_proto "$folded"
+curl_missing_proto="$curl_proto_bad"
 
 if [[ "$curl_missing_proto" == "true" ]]; then
   echo "FAIL: a 'curl' download in $WORKFLOW does not pass \"--proto '=https'\"."
