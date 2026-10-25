@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { app, BrowserWindow, safeStorage, session } from 'electron';
+import { app, BrowserWindow, dialog, safeStorage, session } from 'electron';
 import { IPC_CHANNELS } from '../shared/types/domain/ipc-channels';
 import type { AuthMode } from '../shared/types/ports/agent-backend';
 import { AgentMessageRouter } from './agent/agent-message-router';
@@ -8,11 +8,11 @@ import { AgentIPCHandler } from './ipc/agent-ipc-handler';
 import { SessionIPCHandler } from './ipc/session-ipc-handler';
 import { SettingsIPCHandler } from './ipc/settings-ipc-handler';
 import { SpeechIPCHandler } from './ipc/speech-ipc-handler';
-import { checkAdminPrivileges } from './security/admin-check';
+import { checkAdminPrivileges, type AdminCheckResult } from './security/admin-check';
 import { SafeStorageKeyManager } from './security/safe-storage-key-manager';
 import { SherpaOnnxStt } from './speech/sherpa-onnx-stt';
 import { initializeDatabase } from './storage/database-initializer';
-import { InMemoryConfigStore } from './storage/electron-config-store';
+import { ElectronConfigStore } from './storage/electron-config-store';
 import { SqliteAuditRepository } from './storage/sqlite-audit-repository';
 import { SqliteSessionRepository } from './storage/sqlite-session-repository';
 
@@ -37,87 +37,9 @@ declare const MAIN_WINDOW_VITE_NAME: string;
 // No DI framework — this is the only place where concrete implementations are created.
 
 let mainWindow: BrowserWindow | null = null;
+let cachedAdminResult: AdminCheckResult | null = null;
 
-function bootstrap(): void {
-  // 1. Admin privilege check
-  const adminResult = checkAdminPrivileges();
-
-  // 2. Initialize persistence with real better-sqlite3
-  // eslint-disable-next-line @typescript-eslint/no-require-imports -- native module
-  const BetterSqlite3 = require('better-sqlite3') as typeof import('better-sqlite3');
-  const dbPath = path.join(app.getPath('userData'), 'talkterm.db');
-  const db = new BetterSqlite3(dbPath);
-  db.pragma('journal_mode = WAL');
-  initializeDatabase(db);
-  const sessionRepo = new SqliteSessionRepository(db);
-  const auditRepo = new SqliteAuditRepository(db);
-  const configStore = new InMemoryConfigStore();
-
-  // 3. Security — use Electron's safeStorage for API key encryption
-  const keyManager = new SafeStorageKeyManager({
-    isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
-    encryptString: (text: string) => safeStorage.encryptString(text),
-    decryptString: (buf: Buffer) => safeStorage.decryptString(buf),
-  });
-
-  // 4. Agent backend
-  const agentBackend = new ClaudeSdkBackend(
-    auditRepo,
-    () => keyManager.retrieveKey(),
-    (): AuthMode => {
-      const mode = configStore.get('authMode');
-      return mode === 'claude-subscription' ? 'claude-subscription' : 'api-key';
-    },
-  );
-  const agentRouter = new AgentMessageRouter(agentBackend);
-
-  // 5. IPC handlers — register with ipcMain
-  // eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require for ipcMain in composition root
-  const { ipcMain } = require('electron') as typeof import('electron');
-  const agentHandler = new AgentIPCHandler(
-    agentRouter,
-    () => mainWindow?.webContents ?? null,
-    sessionRepo,
-  );
-  const settingsHandler = new SettingsIPCHandler(keyManager, configStore);
-  const sessionHandler = new SessionIPCHandler(sessionRepo, configStore);
-  const sherpaOnnxStt = new SherpaOnnxStt();
-  const speechHandler = new SpeechIPCHandler(sherpaOnnxStt, () => mainWindow?.webContents ?? null);
-  agentHandler.register(ipcMain);
-  settingsHandler.register(ipcMain);
-  sessionHandler.register(ipcMain);
-  speechHandler.register(ipcMain);
-
-  // 5a. Admin check and app lifecycle IPC handlers
-  ipcMain.handle(IPC_CHANNELS.ADMIN_RETRY_CHECK, () => adminResult);
-  ipcMain.on(IPC_CHANNELS.QUIT_APP, () => {
-    app.quit();
-  });
-  ipcMain.handle(IPC_CHANNELS.SESSION_GET_INCOMPLETE, (_event: unknown, workspacePath: unknown) => {
-    if (typeof workspacePath !== 'string' || workspacePath === '') {
-      return [];
-    }
-    return sessionRepo.findIncomplete(workspacePath);
-  });
-
-  // 6. Grant microphone permission for Web Speech API (STT)
-  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
-    // Allow media (microphone) checks — required before SpeechRecognition.start()
-    if (permission === 'media') {
-      return true;
-    }
-    return false;
-  });
-  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    // Allow media (microphone/camera) for Web Speech API; deny others for security
-    if (permission === 'media') {
-      callback(true);
-    } else {
-      callback(false);
-    }
-  });
-
-  // 7. Create window
+function createMainWindow(adminResult: AdminCheckResult): void {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -132,7 +54,7 @@ function bootstrap(): void {
     },
   });
 
-  // 7. Send admin check result to renderer
+  // Send admin check result to renderer
   mainWindow.webContents.on('did-finish-load', () => {
     mainWindow?.webContents.send(IPC_CHANNELS.ADMIN_CHECK_RESULT, adminResult);
   });
@@ -170,6 +92,99 @@ function bootstrap(): void {
       }
     }
   });
+}
+
+function bootstrap(): void {
+  // 1. Admin privilege check
+  const adminResult = checkAdminPrivileges();
+  cachedAdminResult = adminResult;
+
+  // 2. Initialize persistence with real better-sqlite3 and persistent config store
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- native module
+  const BetterSqlite3 = require('better-sqlite3') as typeof import('better-sqlite3');
+  const envUserData = process.env['ELECTRON_USER_DATA_DIR'];
+  const userDataDir =
+    envUserData !== undefined && envUserData !== '' ? envUserData : app.getPath('userData');
+  const dbPath = path.join(userDataDir, 'talkterm.db');
+  const db = new BetterSqlite3(dbPath);
+  db.pragma('journal_mode = WAL');
+  initializeDatabase(db);
+  const sessionRepo = new SqliteSessionRepository(db);
+  const auditRepo = new SqliteAuditRepository(db);
+  const configStore = new ElectronConfigStore(path.join(userDataDir, 'config.json'));
+
+  // 3. Security — use Electron's safeStorage for API key encryption, persisted in configStore
+  const keyManager = new SafeStorageKeyManager(
+    {
+      isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+      encryptString: (text: string) => safeStorage.encryptString(text),
+      decryptString: (buf: Buffer) => safeStorage.decryptString(buf),
+    },
+    configStore,
+  );
+
+  // 4. Agent backend
+  const agentBackend = new ClaudeSdkBackend(
+    auditRepo,
+    () => keyManager.retrieveKey(),
+    (): AuthMode => {
+      const mode = configStore.get('authMode');
+      return mode === 'claude-subscription' ? 'claude-subscription' : 'api-key';
+    },
+  );
+  const agentRouter = new AgentMessageRouter(agentBackend);
+
+  // 5. IPC handlers — register with ipcMain
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require for ipcMain in composition root
+  const { ipcMain } = require('electron') as typeof import('electron');
+  const agentHandler = new AgentIPCHandler(
+    agentRouter,
+    () => mainWindow?.webContents ?? null,
+    sessionRepo,
+  );
+  const settingsHandler = new SettingsIPCHandler(keyManager, configStore, async () => {
+    const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
+  const sessionHandler = new SessionIPCHandler(sessionRepo, configStore, keyManager);
+  const sherpaOnnxStt = new SherpaOnnxStt();
+  const speechHandler = new SpeechIPCHandler(sherpaOnnxStt, () => mainWindow?.webContents ?? null);
+  agentHandler.register(ipcMain);
+  settingsHandler.register(ipcMain);
+  sessionHandler.register(ipcMain);
+  speechHandler.register(ipcMain);
+
+  // 5a. Admin check and app lifecycle IPC handlers
+  ipcMain.handle(IPC_CHANNELS.ADMIN_RETRY_CHECK, () => adminResult);
+  ipcMain.on(IPC_CHANNELS.QUIT_APP, () => {
+    app.quit();
+  });
+  ipcMain.handle(IPC_CHANNELS.SESSION_GET_INCOMPLETE, (_event: unknown, workspacePath: unknown) => {
+    if (typeof workspacePath !== 'string' || workspacePath === '') {
+      return [];
+    }
+    return sessionRepo.findIncomplete(workspacePath);
+  });
+
+  // 6. Grant microphone permission for Web Speech API (STT)
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+    // Allow media (microphone) checks — required before SpeechRecognition.start()
+    if (permission === 'media') {
+      return true;
+    }
+    return false;
+  });
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    // Allow media (microphone/camera) for Web Speech API; deny others for security
+    if (permission === 'media') {
+      callback(true);
+    } else {
+      callback(false);
+    }
+  });
+
+  // 7. Create initial window
+  createMainWindow(adminResult);
 
   // 8. Crash-safe session persistence
   app.on('before-quit', () => {
@@ -183,8 +198,8 @@ void app
     bootstrap();
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        bootstrap();
+      if (BrowserWindow.getAllWindows().length === 0 && cachedAdminResult !== null) {
+        createMainWindow(cachedAdminResult);
       }
     });
   })

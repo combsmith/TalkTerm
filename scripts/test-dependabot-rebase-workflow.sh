@@ -2,7 +2,7 @@
 # Regression guard: assert that dependabot-rebase.yml keeps the reliability- and
 # security-critical invariants its own header marks as MUST-NOT-CHANGE. The file
 # is a thin caller stub for the org reusable
-# petry-projects/.github/.github/workflows/dependabot-rebase-reusable.yml; the
+# combsmith/.github/.github/workflows/dependabot-rebase-reusable.yml; the
 # rebase/merge-serialization logic lives there, not here.
 #
 # Context (Fleet Monitor #428): the single failing run tipping this workflow over
@@ -23,7 +23,7 @@ set -euo pipefail
 
 WORKFLOW="${1:-.github/workflows/dependabot-rebase.yml}"
 JOB="dependabot-rebase"
-REUSABLE_PREFIX="petry-projects/.github/.github/workflows/dependabot-rebase-reusable.yml@"
+REUSABLE_PREFIX="combsmith/.github/.github/workflows/dependabot-rebase-reusable.yml@"
 PASS=true
 
 echo "=== test-dependabot-rebase-workflow ($WORKFLOW) ==="

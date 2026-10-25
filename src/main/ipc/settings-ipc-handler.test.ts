@@ -32,11 +32,49 @@ describe('SettingsIPCHandler', () => {
   it('registers all settings channels', () => {
     const handler = new SettingsIPCHandler(createMockKeyManager(), new InMemoryConfigStore());
     handler.register(ipcMain);
+    expect(handlers.has(IPC_CHANNELS.SETTINGS_VALIDATE_KEY)).toBe(true);
     expect(handlers.has(IPC_CHANNELS.SETTINGS_GET_KEY_STATE)).toBe(true);
     expect(handlers.has(IPC_CHANNELS.SETTINGS_STORE_KEY)).toBe(true);
     expect(handlers.has(IPC_CHANNELS.PROFILE_GET)).toBe(true);
     expect(handlers.has(IPC_CHANNELS.PROFILE_SET)).toBe(true);
+    expect(handlers.has(IPC_CHANNELS.AVATAR_GET_ROSTER)).toBe(true);
     expect(handlers.has(IPC_CHANNELS.AVATAR_SELECT)).toBe(true);
+    expect(handlers.has(IPC_CHANNELS.WORKSPACE_BROWSE)).toBe(true);
+    expect(handlers.has(IPC_CHANNELS.WORKSPACE_SET)).toBe(true);
+  });
+
+  it('validates API keys via SETTINGS_VALIDATE_KEY', () => {
+    const handler = new SettingsIPCHandler(createMockKeyManager(), new InMemoryConfigStore());
+    handler.register(ipcMain);
+    const validate = handlers.get(IPC_CHANNELS.SETTINGS_VALIDATE_KEY);
+    expect(validate?.({}, 'sk-ant-api03-valid')).toEqual({ valid: true });
+    expect(validate?.({}, 'sk-ant-oat-token')).toEqual({
+      valid: false,
+      message: expect.stringContaining('subscription token') as string,
+    });
+    expect(validate?.({}, 'bad-key')).toEqual({
+      valid: false,
+      message: expect.stringContaining('sk-ant-api03-') as string,
+    });
+  });
+
+  it('returns MVP avatar roster and sets/browses workspace', async () => {
+    const store = new InMemoryConfigStore();
+    const browseMock = vi.fn().mockResolvedValue('/tmp/selected-workspace');
+    const handler = new SettingsIPCHandler(createMockKeyManager(), store, browseMock);
+    handler.register(ipcMain);
+
+    const getRoster = handlers.get(IPC_CHANNELS.AVATAR_GET_ROSTER);
+    const roster = getRoster?.({}) as Array<{ id: string }>;
+    expect(roster.length).toBeGreaterThan(0);
+    expect(roster[0]?.id).toBe('mary');
+
+    const browse = handlers.get(IPC_CHANNELS.WORKSPACE_BROWSE);
+    await expect(browse?.({})).resolves.toBe('/tmp/selected-workspace');
+
+    const setWorkspace = handlers.get(IPC_CHANNELS.WORKSPACE_SET);
+    setWorkspace?.({}, '/tmp/custom-workspace');
+    expect(store.get('workspacePath')).toBe('/tmp/custom-workspace');
   });
 
   it('returns none when no key stored', () => {

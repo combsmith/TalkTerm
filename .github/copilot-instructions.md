@@ -69,4 +69,4 @@ None. This repo follows the org-level defaults; project specifics above add deta
 
 ## Org Standards
 
-See [petry-projects/.github — AGENTS.md](https://github.com/petry-projects/.github/blob/main/AGENTS.md) for org-wide development standards, and this repo's [AGENTS.md](../AGENTS.md) for the full project-specific implementation rules.
+See [combsmith/.github — AGENTS.md](https://github.com/combsmith/.github/blob/main/AGENTS.md) for org-wide development standards, and this repo's [AGENTS.md](../AGENTS.md) for the full project-specific implementation rules.

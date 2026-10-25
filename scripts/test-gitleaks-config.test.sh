@@ -17,8 +17,15 @@ fi
 GUARD="${SCRIPT_DIR}/test-gitleaks-config.sh"
 
 fails=0
-pass() { echo "ok   - $1"; }
-fail() { echo "FAIL - $1"; fails=$((fails + 1)); }
+pass() {
+  local desc="$1"
+  echo "ok   - $desc"
+}
+fail() {
+  local desc="$1"
+  echo "FAIL - $desc"
+  fails=$((fails + 1))
+}
 
 # The guard uses yq to parse TOML (its Check 0). Without yq it exits early and
 # these fixtures cannot be exercised, so skip cleanly rather than report noise.

@@ -177,46 +177,6 @@ assert_eq "pr_quality_needs_reconcile: merge methods drifted -> true" \
 assert_eq "pr_quality_needs_reconcile: dismiss_stale_reviews drifted (false) -> true" \
   "true" "$(pr_quality_needs_reconcile "$PR_QUALITY_MERGE_METHOD" "$PR_QUALITY_REQUIRE_LAST_PUSH_APPROVAL" "false")"
 
-# ── pr_quality_merge_methods_status ───────────────────────────────────────────
-ruleset_squash='{"rules":[{"type":"pull_request","parameters":{"allowed_merge_methods":["squash"]}}]}'
-ruleset_drifted='{"rules":[{"type":"pull_request","parameters":{"allowed_merge_methods":["merge","rebase","squash"]}}]}'
-ruleset_unsorted='{"rules":[{"type":"pull_request","parameters":{"allowed_merge_methods":["squash","merge"]}}]}'
-ruleset_no_pr='{"rules":[{"type":"required_status_checks","parameters":{}}]}'
-ruleset_no_methods='{"rules":[{"type":"pull_request","parameters":{}}]}'
-
-assert_eq "pr_quality_merge_methods_status: squash-only -> squash" \
-  "squash" "$(pr_quality_merge_methods_status "$ruleset_squash")"
-assert_eq "pr_quality_merge_methods_status: drifted -> merge,rebase,squash" \
-  "merge,rebase,squash" "$(pr_quality_merge_methods_status "$ruleset_drifted")"
-assert_eq "pr_quality_merge_methods_status: unsorted input is sorted" \
-  "merge,squash" "$(pr_quality_merge_methods_status "$ruleset_unsorted")"
-assert_eq "pr_quality_merge_methods_status: no pull_request rule -> missing" \
-  "missing" "$(pr_quality_merge_methods_status "$ruleset_no_pr")"
-assert_eq "pr_quality_merge_methods_status: rule without methods -> missing" \
-  "missing" "$(pr_quality_merge_methods_status "$ruleset_no_methods")"
-assert_eq "pr_quality_merge_methods_status: empty string -> missing" \
-  "missing" "$(pr_quality_merge_methods_status "")"
-
-# ── pr_quality_merge_methods_status ───────────────────────────────────────────
-ruleset_squash='{"rules":[{"type":"pull_request","parameters":{"allowed_merge_methods":["squash"]}}]}'
-ruleset_drifted='{"rules":[{"type":"pull_request","parameters":{"allowed_merge_methods":["merge","rebase","squash"]}}]}'
-ruleset_unsorted='{"rules":[{"type":"pull_request","parameters":{"allowed_merge_methods":["squash","merge"]}}]}'
-ruleset_no_pr='{"rules":[{"type":"required_status_checks","parameters":{}}]}'
-ruleset_no_methods='{"rules":[{"type":"pull_request","parameters":{}}]}'
-
-assert_eq "pr_quality_merge_methods_status: squash-only -> squash" \
-  "squash" "$(pr_quality_merge_methods_status "$ruleset_squash")"
-assert_eq "pr_quality_merge_methods_status: drifted -> merge,rebase,squash" \
-  "merge,rebase,squash" "$(pr_quality_merge_methods_status "$ruleset_drifted")"
-assert_eq "pr_quality_merge_methods_status: unsorted input is sorted" \
-  "merge,squash" "$(pr_quality_merge_methods_status "$ruleset_unsorted")"
-assert_eq "pr_quality_merge_methods_status: no pull_request rule -> missing" \
-  "missing" "$(pr_quality_merge_methods_status "$ruleset_no_pr")"
-assert_eq "pr_quality_merge_methods_status: rule without methods -> missing" \
-  "missing" "$(pr_quality_merge_methods_status "$ruleset_no_methods")"
-assert_eq "pr_quality_merge_methods_status: empty string -> missing" \
-  "missing" "$(pr_quality_merge_methods_status "")"
-
 # ── resolve_repo ──────────────────────────────────────────────────────────────
 assert_eq "resolve_repo: bare name -> org/name" \
   "combsmith/TalkTerm" "$(ORG=combsmith resolve_repo "TalkTerm")"

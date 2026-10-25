@@ -117,7 +117,7 @@ jobs:
         # Pin to SHA per Action Pinning Policy
         # (combsmith/.github/standards/ci-standards.md#action-pinning-policy).
         # Refresh: gh api repos/actions/checkout/git/refs/tags/v6.0.2 --jq '.object.sha'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -146,10 +146,10 @@ jobs:
         # this workflow's failure rate. .gitleaksignore is still honoured as a
         # fallback. Guarded by scripts/test-ci-workflow.sh Check 8.
         run: |
-          curl -sSfL --retry 3 --retry-delay 2 --retry-all-errors \
+          curl -sSfL --proto '=https' --retry 3 --retry-delay 2 --retry-all-errors \
             "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz" \
             -o /tmp/gitleaks.tar.gz
-          EXPECTED=$(curl -sSfL --retry 3 --retry-delay 2 --retry-all-errors \
+          EXPECTED=$(curl -sSfL --proto '=https' --retry 3 --retry-delay 2 --retry-all-errors \
             "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_checksums.txt" \
             | grep "gitleaks_8.30.1_linux_x64.tar.gz" | awk '{print $1}')
           echo "${EXPECTED}  /tmp/gitleaks.tar.gz" | sha256sum --check
@@ -166,7 +166,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install yq
         env:
           YQ_VERSION: v4.44.6
@@ -182,6 +182,8 @@ jobs:
       - name: Run workflow regression guards
         run: |
           bash scripts/test-dependabot-rebase-workflow.sh
+          bash scripts/test-dependency-audit-workflow.sh
+          bash scripts/test-dependency-audit-workflow.test.sh
           bash scripts/test-pr-review-workflow.sh
           bash scripts/test-pr-review-workflow.test.sh
           bash scripts/test-ci-workflow.sh
@@ -190,4 +192,6 @@ jobs:
           bash scripts/test-copilot-setup-steps-workflow.sh
           bash scripts/test-sonarcloud-workflow.sh
           bash scripts/test-sonarcloud-workflow.test.sh
+          bash scripts/test-pr-auto-review-workflow.sh
+          bash scripts/test-pr-auto-review-workflow.test.sh
           bash scripts/apply-repo-settings.test.sh

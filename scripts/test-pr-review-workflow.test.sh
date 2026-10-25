@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # test-pr-review-workflow.test.sh — portable tests for the pr-review.yml
 # regression guard (scripts/test-pr-review-workflow.sh). The guard asserts the
-# invariants that keep the PR Review workflow's Fleet Monitor failure rate low:
-# a head-SHA concurrency lane with cancel-in-progress: false (#374) AND a
-# review-job guard that skips Dependabot-triggered runs (#465). Dependabot
-# events read the separate Dependabot secret store, so `secrets: inherit`
-# forwards empty PAT/OAuth secrets and the reusable's auth-scope check fails;
-# skipping the job makes those runs neutral instead of failed.
+# invariants of the thin caller stub synced from the org template
+# (combsmith/.github standards/workflows/pr-review.yml): a review-job
+# guard that skips Dependabot-triggered runs (#465); a top-level `concurrency:`
+# block is neither required nor forbidden (#533). Dependabot events read the separate Dependabot secret store, so
+# `secrets: inherit` forwards empty PAT/OAuth secrets and the reusable's
+# auth-scope check fails; skipping the job makes those runs neutral instead of
+# failed.
 # No bats dependency: the guard is driven as a subprocess against temporary
 # fixture workflows.
 # Run: bash scripts/test-pr-review-workflow.test.sh
@@ -43,10 +44,10 @@ fi
 trap 'rm -rf "$TMP"' EXIT
 
 # ── Fixture builder ─────────────────────────────────────────────────────────
-# Emits a minimal pr-review caller with a valid head-SHA concurrency lane
-# (cancel-in-progress: false). The review job's `if:` guard is parameterised so
-# each case isolates exactly the Dependabot-skip invariant (Check 5). Passing an
-# empty string omits the guard entirely.
+# Emits a minimal pr-review caller with no stub-level concurrency block (the
+# template's rule). The review job's `if:` guard is parameterised so each case
+# isolates exactly the Dependabot-skip invariant. Passing an empty string omits
+# the guard entirely.
 write_workflow() {
   local file="$1"
   local job_if="${2-}"
@@ -56,12 +57,6 @@ on:
   pull_request:
     types: [opened, synchronize]
 permissions: {}
-concurrency:
-  group: >-
-    pr-review-${{
-      github.event.pull_request.head.sha ||
-      github.run_id }}
-  cancel-in-progress: false
 jobs:
   review:
 YAML
@@ -73,7 +68,7 @@ YAML
       contents: read
       pull-requests: write
       checks: read
-    uses: petry-projects/.github-private/.github/workflows/pr-review.yml@pr-review/stable
+    uses: combsmith/.github-private/.github/workflows/pr-review.yml@pr-review/stable
     secrets: inherit
 YAML
 }
@@ -129,17 +124,23 @@ else
   pass "an if: that runs only on dependabot[bot] (== not !=) is rejected"
 fi
 
-# ── Case 6: the concurrency invariant is still enforced (regression, #374) ──
-# Drop cancel-in-progress to confirm the pre-existing checks were not weakened
-# by the Dependabot guard addition.
-nocancel="${TMP}/no-cancel.yml"
-write_workflow "$nocancel" "\${{ github.actor != 'dependabot[bot]' }}"
-# Flip cancel-in-progress: false -> true.
-sed 's/cancel-in-progress: false/cancel-in-progress: true/' "$nocancel" > "${nocancel}.tmp" && mv "${nocancel}.tmp" "$nocancel"
-if run_guard "$nocancel"; then
-  fail "cancel-in-progress: true should be REJECTED (concurrency invariant)"
+# ── Case 6: a stub with a concurrency block is accepted (#533) ─────────
+# A top-level concurrency block is tolerated (reported, not failed) until the
+# standards sync removes it; main's stub has one.
+withconc="${TMP}/with-concurrency.yml"
+write_workflow "$withconc" "\${{ github.actor != 'dependabot[bot]' }}"
+cat >> "$withconc" <<'YAML'
+concurrency:
+  group: >-
+    pr-review-${{
+      github.event.pull_request.head.sha ||
+      github.run_id }}
+  cancel-in-progress: false
+YAML
+if run_guard "$withconc"; then
+  pass "a stub with a top-level concurrency block is accepted"
 else
-  pass "cancel-in-progress: true is rejected (concurrency invariant intact)"
+  fail "a stub with a top-level concurrency block should be ACCEPTED"
 fi
 
 # ── Case 7: a missing workflow file fails cleanly ──────────────────────────
@@ -161,6 +162,104 @@ if run_guard "$alwaystrue"; then
 else
   pass "an always-true if: guard is rejected (exact-match check rejects always-true expressions)"
 fi
+
+# ── Case 9: the org template itself is accepted (#533) ─────────────────────
+# Vendored copy of combsmith/.github standards/workflows/pr-review.yml
+# (fetched 2026-10-11), inlined so the test needs no network access or token.
+# Every standards sync replaces .github/workflows/pr-review.yml with this file,
+# so the guard must accept it. Refresh this copy when the template changes.
+template="${TMP}/org-template.yml"
+cat > "$template" <<'YAML'
+# ─────────────────────────────────────────────────────────────────────────────
+# SOURCE OF TRUTH: combsmith/.github/standards/workflows/pr-review.yml
+# Standard:        combsmith/.github/standards/ci-standards.md
+# Reusable:        combsmith/.github-private/.github/workflows/pr-review.yml
+#                  (the pr-review ENGINE — grandfathered name, not *-reusable.yml)
+#
+# AGENTS — READ BEFORE EDITING:
+#   • This file is a THIN CALLER STUB. All review logic lives in the engine
+#     above, including concurrency (per PR + head SHA, never cancelling an
+#     in-flight review), the check_suite-without-a-PR skip, and reading
+#     `client_payload.pr_url` from repository_dispatch.
+#   • You MUST NOT change: the `@pr-review/v1-stable` channel in the `uses:`
+#     line or the matching `agent_ref` — both are re-pinned in lockstep to this
+#     repo's canary-ring tier by the standards sweep. Nor the workflow `name:`,
+#     the job id `review` (check names depend on both), the trigger event types,
+#     the Dependabot skip guard, or the job-level `permissions:` block. Do not
+#     add a stub-level `concurrency:` block.
+#   • The standards sweep only REPLACES an existing caller with this file; it
+#     never adds it to a repo that has none, and never touches
+#     combsmith/.github-private (whose pr-review.yml is the engine).
+#   • If you need different behaviour, open a PR against the engine in
+#     combsmith/.github-private. It reaches every repo when the channel
+#     tag is promoted.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: PR Review Agent
+
+on:
+  check_suite:
+    types: [completed]
+  pull_request_review:
+    types: [submitted, dismissed]
+  pull_request:
+    types: [ready_for_review, reopened, synchronize]
+  workflow_dispatch:
+    inputs:
+      pr_url:
+        description: "Optional: review a single PR URL instead of enumerating"
+        required: false
+        type: string
+      dry_run:
+        description: "If true, never submit reviews or comments"
+        required: false
+        default: "false"
+        type: string
+      force_review:
+        description: "If true, bypass idempotency and re-review at the same head SHA"
+        required: false
+        default: "false"
+        type: string
+  repository_dispatch:
+    types: [pr-review-mention]
+
+permissions: {}
+
+jobs:
+  review:
+    if: ${{ github.actor != 'dependabot[bot]' }}
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: read
+    uses: combsmith/.github-private/.github/workflows/pr-review.yml@pr-review/v1-stable  # NOSONAR(githubactions:S7637) first-party channel ref
+    with:
+      agent_ref: pr-review/v1-stable
+      pr_url: ${{ inputs.pr_url || '' }}
+      dry_run: ${{ inputs.dry_run || '' }}
+      force_review: ${{ inputs.force_review || '' }}
+    secrets: inherit  # NOSONAR(githubactions:S7635) first-party trusted reusable
+YAML
+if run_guard "$template"; then
+  pass "the org template standards/workflows/pr-review.yml is accepted"
+else
+  fail "the org template standards/workflows/pr-review.yml should be ACCEPTED"
+fi
+
+# ── Case 10: FAIL diagnostics go to stderr, not stdout (#541) ──────────────
+# Error messages belong on stderr (SonarCloud shelldre:S7677). Covers both an
+# early-exit failure (missing file) and a check failure (missing if: guard).
+for target in "${TMP}/does-not-exist.yml" "$noif"; do
+  out=""
+  err=""
+  if ! out="$(bash "$GUARD" "$target" 2>/dev/null)"; then :; fi
+  if ! err="$(bash "$GUARD" "$target" 2>&1 >/dev/null)"; then :; fi
+  if [[ "$out" != *FAIL* && "$err" == *FAIL* ]]; then
+    pass "FAIL diagnostics for $(basename "$target") are written to stderr only"
+  else
+    fail "FAIL diagnostics for $(basename "$target") should be written to stderr, not stdout"
+  fi
+done
 
 echo ""
 if [[ "$fails" -eq 0 ]]; then

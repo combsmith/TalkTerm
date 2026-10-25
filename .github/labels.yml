@@ -3,29 +3,29 @@
 # https://github.com/combsmith/.github/blob/main/standards/github-settings.md#labels--standard-set
 
 - name: security
-  color: 'd93f0b'
+  color: "d93f0b"
   description: Security-related PRs and issues
 
 - name: dependencies
-  color: '0075ca'
+  color: "0075ca"
   description: Dependency update PRs
 
 - name: scorecard
-  color: 'd93f0b'
+  color: "d93f0b"
   description: OpenSSF Scorecard findings (auto-created)
 
 - name: bug
-  color: 'd73a4a'
+  color: "d73a4a"
   description: Bug reports
 
 - name: enhancement
-  color: 'a2eeef'
+  color: "a2eeef"
   description: Feature requests
 
 - name: documentation
-  color: '0075ca'
+  color: "0075ca"
   description: Documentation changes
 
 - name: in-progress
-  color: 'fbca04'
+  color: "fbca04"
   description: An agent is actively working this issue

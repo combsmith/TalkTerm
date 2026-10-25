@@ -61,8 +61,33 @@ describe('SessionIPCHandler', () => {
     const store = new InMemoryConfigStore();
     new SessionIPCHandler(createMockSessionRepo(), store).register(ipcMain);
     const assess = handlers.get(IPC_CHANNELS.LAUNCH_ASSESS_STATE);
-    const state = assess?.({}) as { profileComplete: boolean };
+    const state = assess?.({}) as {
+      profileComplete: boolean;
+      avatarSelected: boolean;
+      workspaceSelected: boolean;
+    };
     expect(state.profileComplete).toBe(false); // No profile set
+    expect(state.avatarSelected).toBe(false); // No profile or avatar set
+    expect(state.workspaceSelected).toBe(false);
+  });
+
+  it('reports apiKeyValid when key is stored in keyManager or subscription mode is set', () => {
+    const store = new InMemoryConfigStore();
+    const keyManager = {
+      storeKey: vi.fn(),
+      retrieveKey: vi.fn().mockReturnValue('sk-ant-api03-test'),
+      deleteKey: vi.fn(),
+      hasKey: vi.fn().mockReturnValue(true),
+    };
+    new SessionIPCHandler(createMockSessionRepo(), store, keyManager).register(ipcMain);
+    const assess = handlers.get(IPC_CHANNELS.LAUNCH_ASSESS_STATE);
+    const stateWithKey = assess?.({}) as { apiKeyValid: boolean };
+    expect(stateWithKey.apiKeyValid).toBe(true);
+
+    keyManager.hasKey.mockReturnValue(false);
+    store.set('authMode', 'claude-subscription');
+    const stateWithSub = assess?.({}) as { apiKeyValid: boolean };
+    expect(stateWithSub.apiKeyValid).toBe(true);
   });
 
   it('assesses complete state when profile exists', () => {

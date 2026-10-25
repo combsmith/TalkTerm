@@ -10,7 +10,10 @@ export class IpcSpeechStt implements SpeechToText {
   private _isListening = false;
   private audioContext: AudioContext | null = null;
   private mediaStream: MediaStream | null = null;
-  private workletNode: AudioWorkletNode | null = null;
+  private sourceNode: MediaStreamAudioSourceNode | null = null;
+  /* eslint-disable @typescript-eslint/no-deprecated -- ScriptProcessorNode used for PCM mic capture */
+  private processorNode: ScriptProcessorNode | null = null;
+  /* eslint-enable @typescript-eslint/no-deprecated */
   private unsubResult: (() => void) | null = null;
   private unsubError: (() => void) | null = null;
   private unsubEnd: (() => void) | null = null;
@@ -45,12 +48,19 @@ export class IpcSpeechStt implements SpeechToText {
   }
 
   stop(): void {
-    if (!this._isListening && this.audioContext === null) return;
+    if (!this._isListening && this.audioContext === null && this.mediaStream === null) return;
     this._isListening = false;
 
     // Stop audio capture
-    this.workletNode?.disconnect();
-    this.workletNode = null;
+    if (this.processorNode !== null) {
+      /* eslint-disable @typescript-eslint/no-deprecated -- ScriptProcessorNode cleanup */
+      this.processorNode.onaudioprocess = null;
+      /* eslint-enable @typescript-eslint/no-deprecated */
+      this.processorNode.disconnect();
+      this.processorNode = null;
+    }
+    this.sourceNode?.disconnect();
+    this.sourceNode = null;
     if (this.audioContext !== null) {
       void this.audioContext.close();
       this.audioContext = null;
@@ -74,10 +84,14 @@ export class IpcSpeechStt implements SpeechToText {
     void window.electronAPI.stopAudioCapture();
   }
 
+  private isStillListening(): boolean {
+    return this._isListening;
+  }
+
   private async startCapture(): Promise<void> {
     try {
       // Request microphone
-      this.mediaStream = await navigator.mediaDevices.getUserMedia({
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
           sampleRate: 16000,
@@ -85,17 +99,33 @@ export class IpcSpeechStt implements SpeechToText {
           noiseSuppression: true,
         },
       });
+      if (!this.isStillListening()) {
+        for (const track of stream.getTracks()) {
+          track.stop();
+        }
+        return;
+      }
+      this.mediaStream = stream;
 
       // Tell main process to start the recognizer
       await window.electronAPI.startAudioCapture();
+      if (!this.isStillListening()) {
+        for (const track of stream.getTracks()) {
+          track.stop();
+        }
+        this.mediaStream = null;
+        return;
+      }
 
-      // Set up AudioContext → AudioWorklet → IPC pipeline
+      // Set up AudioContext → ScriptProcessorNode → IPC pipeline
       this.audioContext = new AudioContext({ sampleRate: 16000 });
       const source = this.audioContext.createMediaStreamSource(this.mediaStream);
+      this.sourceNode = source;
 
       // Use ScriptProcessorNode — simpler than AudioWorklet (which requires a separate file)
       /* eslint-disable @typescript-eslint/no-deprecated -- ScriptProcessorNode is adequate for this mic capture use case */
       const processor = this.audioContext.createScriptProcessor(4096, 1, 1);
+      this.processorNode = processor;
       processor.onaudioprocess = (event): void => {
         if (!this._isListening) return;
         const inputData = event.inputBuffer.getChannelData(0);

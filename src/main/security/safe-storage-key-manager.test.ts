@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/unbound-method -- vi.fn() mocks */
 import { describe, it, expect, vi } from 'vitest';
+import { InMemoryConfigStore } from '../storage/electron-config-store';
 import { SafeStorageKeyManager, type SafeStorageAPI } from './safe-storage-key-manager';
 
 function createMockSafeStorage(available = true): SafeStorageAPI {
@@ -35,6 +36,23 @@ describe('SafeStorageKeyManager', () => {
     mgr.deleteKey();
     expect(mgr.hasKey()).toBe(false);
     expect(mgr.retrieveKey()).toBeNull();
+  });
+
+  it('persists encrypted key to configStore and restores on new instance', () => {
+    const configStore = new InMemoryConfigStore();
+    const safeStorage = createMockSafeStorage();
+    const mgr1 = new SafeStorageKeyManager(safeStorage, configStore);
+    mgr1.storeKey('sk-ant-api03-persisted');
+    expect(configStore.has('encryptedApiKey')).toBe(true);
+
+    const mgr2 = new SafeStorageKeyManager(safeStorage, configStore);
+    expect(mgr2.hasKey()).toBe(true);
+    expect(mgr2.retrieveKey()).toBe('sk-ant-api03-persisted');
+
+    mgr2.deleteKey();
+    expect(configStore.has('encryptedApiKey')).toBe(false);
+    const mgr3 = new SafeStorageKeyManager(safeStorage, configStore);
+    expect(mgr3.hasKey()).toBe(false);
   });
 
   it('throws when encryption not available', () => {

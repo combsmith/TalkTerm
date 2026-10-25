@@ -1,6 +1,7 @@
 import { IPC_CHANNELS } from '../../shared/types/domain/ipc-channels';
 import { createSession } from '../../shared/types/domain/session';
 import type { SessionRepository } from '../../shared/types/ports/session-repository';
+import type { KeyManager } from '../security/safe-storage-key-manager';
 import type { ConfigStore } from '../storage/electron-config-store';
 import type { IPCMain, IPCRegistrar } from './ipc-registrar';
 import { validateString } from './validate-string';
@@ -9,6 +10,7 @@ export class SessionIPCHandler implements IPCRegistrar {
   constructor(
     private readonly sessionRepo: SessionRepository,
     private readonly configStore: ConfigStore,
+    private readonly keyManager?: KeyManager,
   ) {}
 
   register(ipcMain: IPCMain): void {
@@ -42,14 +44,19 @@ export class SessionIPCHandler implements IPCRegistrar {
       const profile = this.configStore.get('userProfile') as
         | { name: string; avatarPersonaId: string | null }
         | undefined;
-      // Check for API key: stored key OR ANTHROPIC_API_KEY env var
+      // Check for API key: stored key, claude-subscription auth mode, OR ANTHROPIC_API_KEY env var
       const apiKeyEnv = process.env['ANTHROPIC_API_KEY'];
       const hasEnvKey = apiKeyEnv !== undefined && apiKeyEnv !== '';
+      const hasStoredKey = this.keyManager?.hasKey() === true;
+      const isSubscription = this.configStore.get('authMode') === 'claude-subscription';
       return {
-        apiKeyValid: hasEnvKey,
+        apiKeyValid: hasEnvKey || hasStoredKey || isSubscription,
         envKeyDetected: hasEnvKey,
         profileComplete: profile !== undefined && profile.name !== '',
-        avatarSelected: profile?.avatarPersonaId !== null,
+        avatarSelected:
+          profile !== undefined &&
+          profile.avatarPersonaId !== null &&
+          profile.avatarPersonaId !== '',
         workspaceSelected: this.configStore.has('workspacePath'),
       };
     });

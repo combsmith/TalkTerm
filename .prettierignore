@@ -6,5 +6,6 @@ dist
 _bmad
 _bmad-output
 .claude/skills
+.github
 test-results
 .coderabbit.yaml

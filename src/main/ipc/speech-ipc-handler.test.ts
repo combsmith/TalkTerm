@@ -135,6 +135,27 @@ describe('SpeechIPCHandler', () => {
       IPC_CHANNELS.AUDIO_ERROR,
       expect.stringContaining('Init failed'),
     );
+    expect(mockStt.start).not.toHaveBeenCalled();
+  });
+
+  it('wires onError before initialize and aborts start if initialize reports an error via onError', async () => {
+    const initMock = mockStt.initialize as ReturnType<typeof vi.fn>;
+    initMock.mockImplementation(() => {
+      mockStt.onError?.('Recognizer init failed');
+      return Promise.resolve();
+    });
+    handler.register(mockIpcMain as IpcMain);
+
+    const startHandler = ipcHandlers[IPC_CHANNELS.AUDIO_START];
+    if (startHandler !== undefined) {
+      await startHandler({} as IpcMainInvokeEvent);
+    }
+
+    expect(mockWebContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.AUDIO_ERROR,
+      'Recognizer init failed',
+    );
+    expect(mockStt.start).not.toHaveBeenCalled();
   });
 
   it('stops STT on AUDIO_STOP', () => {

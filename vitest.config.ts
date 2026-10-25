@@ -26,8 +26,6 @@ export default defineConfig({
         'src/shared/types/domain/electron-api.ts',
         'src/main/ipc/ipc-registrar.ts',
         'src/main/speech/',
-        'src/main/ipc/speech-ipc-handler.ts',
-        'src/renderer/speech/ipc-speech-stt.ts',
         'test/',
         '**/*.config.*',
         '**/*.d.ts',

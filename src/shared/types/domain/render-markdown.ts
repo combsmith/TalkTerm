@@ -31,7 +31,7 @@ export function detectContentType(text: string): ContentType {
 
   // Check for clustered/categorized content (multiple bold headers with list items)
   const boldHeaders = (text.match(/^\*\*.+\*\*/gm) ?? []).length;
-  const listItems = (text.match(/^\s*[-*]\s+/gm) ?? []).length;
+  const listItems = (text.match(/^[ \t]*[-*][ \t]+/gm) ?? []).length;
   if (boldHeaders >= 2 && listItems >= 4) {
     return 'clustered-cards';
   }
@@ -79,14 +79,22 @@ export function parsePlanContent(text: string): PlanStep[] {
   const steps: PlanStep[] = [];
   const lines = text.split('\n');
   for (const line of lines) {
-    const match = /^\s*(?:\d+[.)]\s+|[-*]\s+)(?:\[([x ])\]\s+)?(.+)$/i.exec(line);
-    if (match !== null) {
-      const done = match[1]?.toLowerCase() === 'x';
-      const content = match[2] ?? '';
-      const dashIdx = content.indexOf('—');
-      const title = dashIdx !== -1 ? content.slice(0, dashIdx).trim() : content.trim();
-      const description = dashIdx !== -1 ? content.slice(dashIdx + 1).trim() : '';
-      steps.push({ title, description, done });
+    const trimmed = line.trim();
+    const prefixMatch = /^(?:\d+[.)]|[-*])[ \t]+/.exec(trimmed);
+    if (prefixMatch !== null) {
+      let remainder = trimmed.slice(prefixMatch[0].length);
+      let done = false;
+      const checkboxMatch = /^\[([xX ])\][ \t]+/.exec(remainder);
+      if (checkboxMatch !== null) {
+        done = checkboxMatch[1]?.toLowerCase() === 'x';
+        remainder = remainder.slice(checkboxMatch[0].length);
+      }
+      if (remainder !== '') {
+        const dashIdx = remainder.indexOf('—');
+        const title = dashIdx !== -1 ? remainder.slice(0, dashIdx).trim() : remainder.trim();
+        const description = dashIdx !== -1 ? remainder.slice(dashIdx + 1).trim() : '';
+        steps.push({ title, description, done });
+      }
     }
   }
   return steps;
@@ -104,15 +112,16 @@ export function parseClusteredContent(text: string): ClusteredGroup[] {
   const lines = text.split('\n');
 
   for (const line of lines) {
-    const headerMatch = /^\*\*(.+?)\*\*/.exec(line.trim());
-    if (headerMatch !== null && !line.trim().startsWith('-')) {
+    const trimmed = line.trim();
+    const headerMatch = /^\*\*(.+?)\*\*/.exec(trimmed);
+    if (headerMatch !== null && !trimmed.startsWith('-')) {
       if (current !== null) {
         groups.push(current);
       }
       current = { heading: headerMatch[1] ?? '', items: [] };
       continue;
     }
-    const itemMatch = /^\s*[-*]\s+(.+)$/.exec(line);
+    const itemMatch = /^[-*][ \t]+(\S.*)$/.exec(trimmed);
     if (itemMatch !== null && current !== null) {
       current.items.push(itemMatch[1] ?? '');
     }

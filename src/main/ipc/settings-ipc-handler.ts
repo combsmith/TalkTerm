@@ -1,3 +1,4 @@
+import { MVP_PERSONAS } from '../../shared/types/domain/avatar-persona';
 import { IPC_CHANNELS } from '../../shared/types/domain/ipc-channels';
 import type { KeyManager } from '../security/safe-storage-key-manager';
 import type { ConfigStore } from '../storage/electron-config-store';
@@ -8,9 +9,28 @@ export class SettingsIPCHandler implements IPCRegistrar {
   constructor(
     private readonly keyManager: KeyManager,
     private readonly configStore: ConfigStore,
+    private readonly browseDirectory: () => Promise<string | null> = () => Promise.resolve(null),
   ) {}
 
   register(ipcMain: IPCMain): void {
+    ipcMain.handle(IPC_CHANNELS.SETTINGS_VALIDATE_KEY, (_event: unknown, key: unknown) => {
+      const validKey = validateString(key, 'API key');
+      if (validKey.startsWith('sk-ant-oat')) {
+        return {
+          valid: false,
+          message:
+            'This looks like a Claude subscription token — use the "Claude Pro/Max" option instead.',
+        };
+      }
+      if (validKey.startsWith('sk-ant-api')) {
+        return { valid: true };
+      }
+      return {
+        valid: false,
+        message: "That key didn't work — API keys start with sk-ant-api03-",
+      };
+    });
+
     ipcMain.handle(IPC_CHANNELS.SETTINGS_GET_KEY_STATE, () => {
       if (!this.keyManager.hasKey()) return 'none';
       return 'valid'; // Real validation would check against Anthropic API
@@ -57,6 +77,10 @@ export class SettingsIPCHandler implements IPCRegistrar {
       });
     });
 
+    ipcMain.handle(IPC_CHANNELS.AVATAR_GET_ROSTER, () => {
+      return MVP_PERSONAS;
+    });
+
     ipcMain.handle(IPC_CHANNELS.AVATAR_SELECT, (_event: unknown, personaId: unknown) => {
       const validPersonaId = validateString(personaId, 'Avatar persona ID');
       const profile = this.configStore.get('userProfile') as
@@ -70,6 +94,15 @@ export class SettingsIPCHandler implements IPCRegistrar {
         avatarPersonaId: validPersonaId,
         updatedAt: new Date().toISOString(),
       });
+    });
+
+    ipcMain.handle(IPC_CHANNELS.WORKSPACE_BROWSE, async () => {
+      return this.browseDirectory();
+    });
+
+    ipcMain.handle(IPC_CHANNELS.WORKSPACE_SET, (_event: unknown, workspacePath: unknown) => {
+      const validPath = validateString(workspacePath, 'Workspace path');
+      this.configStore.set('workspacePath', validPath);
     });
   }
 }

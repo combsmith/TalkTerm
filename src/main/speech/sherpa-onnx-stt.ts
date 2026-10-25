@@ -107,7 +107,9 @@ export class SherpaOnnxStt {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[SherpaOnnxStt] Failed to initialize:', msg);
-      this.onError?.(`Failed to initialize speech recognition: ${msg}`);
+      const errorMsg = `Failed to initialize speech recognition: ${msg}`;
+      this.onError?.(errorMsg);
+      throw new Error(errorMsg);
     }
   }
 
@@ -208,7 +210,9 @@ export class SherpaOnnxStt {
             // Follow redirects (HuggingFace uses 301, 302, 303, 307, 308)
             const code = response.statusCode ?? 0;
             if (code >= 300 && code < 400 && response.headers.location !== undefined) {
-              request(response.headers.location);
+              const redirectUrl = new URL(response.headers.location, reqUrl).toString();
+              response.resume();
+              request(redirectUrl);
               return;
             }
             if (response.statusCode !== 200) {

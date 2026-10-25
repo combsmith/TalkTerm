@@ -1,55 +1,56 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Standard: petry-projects/.github/standards/push-protection.md#required-repo-level-settings
+# SOURCE OF TRUTH: combsmith/.github/standards/workflows/apply-repo-settings.yml
+# Standard:        combsmith/.github/standards/github-settings.md
+#                  combsmith/.github/standards/ruleset-remediation-runbook.md
+# Reusable:        combsmith/.github/.github/workflows/apply-repo-settings-reusable.yml
 #
-# Applies repository-level settings via scripts/apply-repo-settings.sh on every
-# push to main and on a weekly schedule (Mon 03:00 UTC) so that settings
-# documented in .github/settings.yml stay in effect and drift is caught between
-# compliance audits. Also triggerable manually for out-of-band remediation.
-# Reconciles: security_and_analysis settings (secret_scanning_ai_detection, etc.),
-# check-suite auto-trigger preferences, and the pr-quality ruleset's
-# allowed_merge_methods (squash-only), dismiss_stale_reviews_on_push (true), and
-# require_last_push_approval (true).
-#
-# Token: GH_PAT_WORKFLOWS (classic PAT with repo scope).
-# `administration` is not a valid GITHUB_TOKEN scope in Actions; and the
-# check-suites/preferences endpoint requires a classic PAT (OAuth tokens are
-# rejected). See standards/github-settings.md#check-suite-auto-trigger-preferences.
+# AGENTS — READ BEFORE EDITING:
+#   • This file is a THIN CALLER STUB. All settings/ruleset logic lives in the
+#     reusable workflow above; consumer repos carry NO script copy.
+#   • You MAY change: the cron offset only (stagger org API load).
+#   • You MUST NOT change: the `uses:` line, `secrets: inherit`, the job-level
+#     `permissions:` block, or the `checkout_ref` forward — reusable workflows can
+#     be granted no more permissions than the calling job has, and forwarding an
+#     input the pinned channel does not declare breaks every run at startup (#1034).
+#   • If you need different behaviour, open a PR against the reusable in the
+#     central repo.
 # ─────────────────────────────────────────────────────────────────────────────
+#
+# Apply repo settings — thin caller for the org-level compliance self-heal.
+# To adopt: copy this file verbatim to .github/workflows/apply-repo-settings.yml.
+# Required org secret (inherited):
+#   GH_PAT_DON_PETRY — classic PAT, repo scope, owner has admin on this repo.
 name: Apply repo settings
 
 on:
+  schedule:
+    # Weekly self-heal. The cron offset MAY be changed to stagger org API load.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Preview changes without applying"
+        type: boolean
+        required: false
+        default: false
   push:
     branches: [main]
     paths:
-      - .github/settings.yml
-      - scripts/apply-repo-settings.sh
-      - .github/workflows/apply-repo-settings.yml
-  schedule:
-    # Reinforce settings weekly (Mon 03:00 UTC) so drift is caught between compliance audits.
-    - cron: '0 3 * * 1'
-  workflow_dispatch:
+      - '.github/workflows/apply-repo-settings.yml'
+      - '.github/settings.yml'
 
 permissions: {}
 
 concurrency:
-  group: apply-repo-settings
+  group: apply-repo-settings-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   apply:
-    name: Apply repo settings
-    runs-on: ubuntu-latest
     permissions:
       contents: read
-    steps:
-      - name: Checkout
-        # Pinned to SHA per Action Pinning Policy
-        # (petry-projects/.github/standards/ci-standards.md#action-pinning-policy).
-        # Refresh: gh api repos/actions/checkout/git/refs/tags/v6.0.2 --jq '.object.sha'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Apply settings
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT_WORKFLOWS }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: bash scripts/apply-repo-settings.sh
+    uses: combsmith/.github/.github/workflows/apply-repo-settings-reusable.yml@apply-repo-settings/v1-ring1  # NOSONAR(githubactions:S7637) first-party channel ref
+    with:
+      dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
+      checkout_ref: apply-repo-settings/v1-ring1  # keep in lockstep with the uses: channel pin
+    secrets: inherit  # NOSONAR(githubactions:S7635) first-party trusted reusable

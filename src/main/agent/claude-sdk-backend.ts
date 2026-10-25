@@ -357,7 +357,7 @@ export class ClaudeSdkBackend implements AgentBackend {
     const resolvePlaceholders = (text: string): string =>
       text
         .replace(/\{project-root\}/g, resolvedRoot)
-        .replace(/^user_name:\s*.+$/m, `user_name: ${userName}`);
+        .replace(/^user_name:[ \t]*\S[^\r\n]*$/m, `user_name: ${userName}`);
 
     let context = `<bmad-agent-definition>\n${resolvePlaceholders(bmad.agent)}\n</bmad-agent-definition>`;
     if (bmad.config !== null) {

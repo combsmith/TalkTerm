@@ -154,15 +154,18 @@ describe('ActionPanel', () => {
     });
 
     it('does nothing when all cards are disabled', async () => {
+      const onSelect = vi.fn();
       const allDisabled: ActionCardData[] = [
         { label: 'A', title: 'Option A', description: 'First', disabled: true },
       ];
       const user = userEvent.setup();
-      render(<ActionPanel title="Choose" cards={allDisabled} onSelect={vi.fn()} />);
+      render(<ActionPanel title="Choose" cards={allDisabled} onSelect={onSelect} />);
       screen.getByRole('listbox').focus();
-      // Should not throw
+      // Should not throw or move focus to disabled option
       await user.keyboard('{ArrowDown}');
       await user.keyboard('{ArrowUp}');
+      expect(screen.getAllByRole('option')[0]).not.toHaveFocus();
+      expect(onSelect).not.toHaveBeenCalled();
     });
   });
 });

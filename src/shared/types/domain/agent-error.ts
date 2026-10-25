@@ -22,55 +22,27 @@ export interface RecoveryOption {
   description: string;
 }
 
+const ERROR_CATEGORY_KEYWORDS: ReadonlyArray<readonly [ErrorCategory, readonly string[]]> = [
+  ['network-error', ['network', 'fetch', 'econnrefused', 'enotfound', 'socket hang up', 'timeout']],
+  ['auth-error', ['401', 'unauthorized', 'api key', 'invalid_api_key', 'authentication']],
+  ['billing-error', ['credit', 'balance', 'billing', 'insufficient', 'payment']],
+  ['rate-limit', ['429', 'rate limit', 'rate_limit', 'overloaded', 'capacity']],
+  ['file-permission', ['permission', 'eacces']],
+  ['tts-error', ['synthesis', 'voice', 'speak']],
+  ['stt-error', ['recognition', 'speech', 'microphone', 'listen']],
+  ['sdk-error', ['sdk', 'agent']],
+];
+
 export function classifyError(error: unknown): ErrorCategory {
   const raw = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
   const msg = raw.toLowerCase();
   if (msg === '') return 'unknown';
 
-  if (
-    msg.includes('network') ||
-    msg.includes('fetch') ||
-    msg.includes('econnrefused') ||
-    msg.includes('enotfound') ||
-    msg.includes('socket hang up') ||
-    msg.includes('timeout')
-  )
-    return 'network-error';
-  if (
-    msg.includes('401') ||
-    msg.includes('unauthorized') ||
-    msg.includes('api key') ||
-    msg.includes('invalid_api_key') ||
-    msg.includes('authentication')
-  )
-    return 'auth-error';
-  if (
-    msg.includes('credit') ||
-    msg.includes('balance') ||
-    msg.includes('billing') ||
-    msg.includes('insufficient') ||
-    msg.includes('payment')
-  )
-    return 'billing-error';
-  if (
-    msg.includes('429') ||
-    msg.includes('rate limit') ||
-    msg.includes('rate_limit') ||
-    msg.includes('overloaded') ||
-    msg.includes('capacity')
-  )
-    return 'rate-limit';
-  if (msg.includes('permission') || msg.includes('eacces')) return 'file-permission';
-  if (msg.includes('synthesis') || msg.includes('voice') || msg.includes('speak'))
-    return 'tts-error';
-  if (
-    msg.includes('recognition') ||
-    msg.includes('speech') ||
-    msg.includes('microphone') ||
-    msg.includes('listen')
-  )
-    return 'stt-error';
-  if (msg.includes('sdk') || msg.includes('agent')) return 'sdk-error';
+  for (const [category, keywords] of ERROR_CATEGORY_KEYWORDS) {
+    if (keywords.some((kw) => msg.includes(kw))) {
+      return category;
+    }
+  }
 
   return 'unknown';
 }

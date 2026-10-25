@@ -14,7 +14,7 @@ export class SpeechIPCHandler {
   register(ipcMain: IpcMain): void {
     ipcMain.handle(IPC_CHANNELS.AUDIO_START, async () => {
       try {
-        await this.stt.initialize();
+        const state = { initFailed: false };
 
         this.stt.onResult = (result) => {
           const wc = this.getWebContents();
@@ -24,6 +24,7 @@ export class SpeechIPCHandler {
         };
 
         this.stt.onError = (error) => {
+          state.initFailed = true;
           const wc = this.getWebContents();
           if (wc !== null) {
             wc.send(IPC_CHANNELS.AUDIO_ERROR, error);
@@ -36,6 +37,11 @@ export class SpeechIPCHandler {
             wc.send(IPC_CHANNELS.AUDIO_END);
           }
         };
+
+        await this.stt.initialize();
+        if (state.initFailed) {
+          return;
+        }
 
         this.stt.start();
       } catch (err: unknown) {

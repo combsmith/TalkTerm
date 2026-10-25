@@ -24,7 +24,7 @@ describe('IPC roundtrip integration', () => {
     configStore = new InMemoryConfigStore();
     keyManager = new SafeStorageKeyManager(createMockSafeStorage());
 
-    const sessionHandler = new SessionIPCHandler(sessionRepo, configStore);
+    const sessionHandler = new SessionIPCHandler(sessionRepo, configStore, keyManager);
     const settingsHandler = new SettingsIPCHandler(keyManager, configStore);
 
     sessionHandler.register(mock.ipcMain);
@@ -166,11 +166,15 @@ describe('IPC roundtrip integration', () => {
       // Settings handler channels
       expect(registered).toContain(IPC_CHANNELS.SETTINGS_GET_KEY_STATE);
       expect(registered).toContain(IPC_CHANNELS.SETTINGS_STORE_KEY);
+      expect(registered).toContain(IPC_CHANNELS.SETTINGS_VALIDATE_KEY);
       expect(registered).toContain(IPC_CHANNELS.SETTINGS_GET);
       expect(registered).toContain(IPC_CHANNELS.SETTINGS_SET);
       expect(registered).toContain(IPC_CHANNELS.PROFILE_GET);
       expect(registered).toContain(IPC_CHANNELS.PROFILE_SET);
       expect(registered).toContain(IPC_CHANNELS.AVATAR_SELECT);
+      expect(registered).toContain(IPC_CHANNELS.AVATAR_GET_ROSTER);
+      expect(registered).toContain(IPC_CHANNELS.WORKSPACE_BROWSE);
+      expect(registered).toContain(IPC_CHANNELS.WORKSPACE_SET);
     });
 
     it('all registered channels follow namespace:verb pattern', () => {
@@ -193,12 +197,13 @@ describe('IPC roundtrip integration', () => {
       await invoke(IPC_CHANNELS.SETTINGS_STORE_KEY, 'sk-ant-api123');
 
       // Step 4: Set workspace
-      await invoke(IPC_CHANNELS.SETTINGS_SET, 'workspacePath', '/projects/demo');
+      await invoke(IPC_CHANNELS.WORKSPACE_SET, '/projects/demo');
 
       // Step 5: Assess launch state -- everything should be ready
       const state = (await invoke(IPC_CHANNELS.LAUNCH_ASSESS_STATE)) as Record<string, unknown>;
       expect(state.profileComplete).toBe(true);
       expect(state.avatarSelected).toBe(true);
+      expect(state.apiKeyValid).toBe(true);
       expect(state.workspaceSelected).toBe(true);
 
       // Step 6: Start session

@@ -9,10 +9,10 @@ export function stripMarkdown(text: string): string {
     .replace(/_(.+?)_/g, '$1') // italic (underscore)
     .replace(/~~(.+?)~~/g, '$1') // strikethrough
     .replace(/`(.+?)`/g, '$1') // inline code
-    .replace(/^#{1,6}\s+/gm, '') // headings
-    .replace(/^\s*[-*+]\s+/gm, '') // list items
-    .replace(/^\s*\d+[.)]\s+/gm, '') // numbered items
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // links
+    .replace(/^#{1,6}[ \t]+/gm, '') // headings
+    .replace(/^[ \t]*[-*+][ \t]+/gm, '') // list items
+    .replace(/^[ \t]*\d+[.)][ \t]+/gm, '') // numbered items
+    .replace(/\[([^\][]+)\]\([^()]+\)/g, '$1') // links
     .trim();
 }
 
@@ -73,16 +73,26 @@ function collectBlockLines(
   return blockLines;
 }
 
+/** Extract the text after a leading `- ` or `* ` marker, or null if not a list item. */
+function extractListItemText(trimmed: string): string | null {
+  if (!trimmed.startsWith('-') && !trimmed.startsWith('*')) {
+    return null;
+  }
+  const rest = trimmed.slice(1);
+  if (!rest.startsWith(' ') && !rest.startsWith('\t')) {
+    return null;
+  }
+  const content = rest.trimStart();
+  return content !== '' ? content : null;
+}
+
 /** Extract dash-list or asterisk-list suggestion items from a block. */
 function extractSuggestions(blockLines: string[]): string[] {
   const suggestions: string[] = [];
   for (const line of blockLines.slice(1)) {
-    const listMatch = /^[-*]\s+(.+)$/.exec(line.trim());
-    if (listMatch !== null) {
-      const captured = listMatch[1];
-      if (captured !== undefined) {
-        suggestions.push(captured);
-      }
+    const captured = extractListItemText(line.trim());
+    if (captured !== null) {
+      suggestions.push(captured);
     }
   }
   return suggestions;
@@ -151,7 +161,8 @@ function detectSectionHeader(trimmed: string): string | null {
 function findPreambleEnd(lines: string[]): number {
   for (let i = 0; i < lines.length; i++) {
     const trimmed = (lines[i] ?? '').trim();
-    if (/^\*\*(.+?)\*\*/.test(trimmed) || /^[-*]\s+.+\?/.test(trimmed)) {
+    const itemText = extractListItemText(trimmed);
+    if (/^\*\*(.+?)\*\*/.test(trimmed) || (itemText !== null && itemText.includes('?'))) {
       return i;
     }
   }
@@ -184,12 +195,9 @@ function parseDashListQuestions(text: string): QuestionSet | null {
     }
 
     // Detect dash-list or asterisk-list items that look like questions
-    const listMatch = /^[-*]\s+(.+)$/.exec(trimmed);
-    if (listMatch !== null) {
-      const itemText = listMatch[1];
-      if (itemText !== undefined && itemText.includes('?')) {
-        questionLines.push({ lineIndex: i, text: itemText, section: currentSection });
-      }
+    const itemText = extractListItemText(trimmed);
+    if (itemText !== null && itemText.includes('?')) {
+      questionLines.push({ lineIndex: i, text: itemText, section: currentSection });
     }
   }
 
