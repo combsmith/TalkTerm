@@ -174,4 +174,62 @@ describe('App', () => {
     expect(screen.getByText(/Claude Pro \/ Max Subscription/)).toBeInTheDocument();
     expect(screen.getByText(/Anthropic API Key/)).toBeInTheDocument();
   });
+
+  it('completes full setup flow through workspace, avatar, greeting, and conversation', async () => {
+    const user = userEvent.setup();
+    vi.mocked(window.electronAPI.getIncompleteSessions).mockResolvedValue([
+      { id: 'prev-1', workspacePath: '/projects/test', updatedAt: '2026-01-01T00:00:00Z' },
+    ]);
+
+    render(<App />);
+    passAdminCheck();
+
+    // 1. Auth choice -> subscription
+    await user.click(screen.getByText(/Claude Pro \/ Max Subscription/));
+
+    // 2. Profile setup
+    await user.type(screen.getByPlaceholderText(/your name/i), 'Alice');
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+
+    // 3. Workspace selection -> enter path and submit
+    await user.type(screen.getByTestId('folder-input'), '/projects/test');
+    await user.click(screen.getByRole('button', { name: /select folder/i }));
+
+    // 4. Avatar selection -> wait for confirmation timeout, then select Mary
+    const selectMaryBtn = await screen.findByRole(
+      'button',
+      { name: /select mary/i },
+      { timeout: 2500 },
+    );
+    await user.click(selectMaryBtn);
+
+    // 5. Greeting phase -> resume incomplete session
+    await user.click(await screen.findByText('/projects/test'));
+
+    // 6. Conversation phase
+    expect(await screen.findByPlaceholderText(/speak to Mary/i)).toBeInTheDocument();
+  });
+
+  it('handles workspace skip and startSession failure fallback', async () => {
+    const user = userEvent.setup();
+    vi.mocked(window.electronAPI.startSession).mockRejectedValueOnce(new Error('IPC error'));
+
+    render(<App />);
+    passAdminCheck();
+
+    await user.click(screen.getByText(/Claude Pro \/ Max Subscription/));
+    await user.type(screen.getByPlaceholderText(/your name/i), 'Bob');
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+
+    // Skip workspace selection
+    await user.click(screen.getByRole('button', { name: /skip/i }));
+
+    // Avatar selection
+    await user.click(screen.getByRole('button', { name: /select mary/i }));
+
+    // Auto-advances from greeting (no incomplete sessions) and falls back when startSession rejects
+    expect(
+      await screen.findByPlaceholderText(/speak to Mary/i, {}, { timeout: 3000 }),
+    ).toBeInTheDocument();
+  });
 });

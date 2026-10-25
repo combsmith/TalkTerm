@@ -17,11 +17,13 @@ describe('WebSpeechTts', () => {
     });
     vi.stubGlobal(
       'SpeechSynthesisUtterance',
-      vi.fn().mockImplementation((text: string) => ({
-        text,
-        voice: null,
-        onend: null,
-      })),
+      vi.fn().mockImplementation(function (text: string) {
+        return {
+          text,
+          voice: null,
+          onend: null,
+        };
+      }),
     );
   });
 

@@ -29,7 +29,7 @@ let mockTtsInstance: {
 };
 
 vi.mock('../../speech/ipc-speech-stt', () => ({
-  IpcSpeechStt: vi.fn().mockImplementation(() => {
+  IpcSpeechStt: vi.fn().mockImplementation(function () {
     mockSttInstance = {
       start: mockSttStart,
       stop: mockSttStop,
@@ -43,7 +43,7 @@ vi.mock('../../speech/ipc-speech-stt', () => ({
 }));
 
 vi.mock('../../speech/web-speech-tts', () => ({
-  WebSpeechTts: vi.fn().mockImplementation(() => {
+  WebSpeechTts: vi.fn().mockImplementation(function () {
     mockTtsInstance = {
       speak: mockTtsSpeak,
       stop: mockTtsStop,
@@ -694,5 +694,203 @@ describe('ConversationView', () => {
     render(<ConversationView userName="DJ" avatarName="Mary" sessionId="s1" />);
     simulateAgentEvent({ type: 'thinking', summary: 'Deep analysis' });
     expect(screen.getByRole('button', { name: /stop talking/i })).toBeInTheDocument();
+  });
+
+  it('selects preferred or fallback English female voice when voices are available', () => {
+    const mockGetVoices = vi.fn().mockReturnValueOnce([{ name: 'Samantha', lang: 'en-US' }]);
+    Object.defineProperty(window, 'speechSynthesis', {
+      value: {
+        getVoices: mockGetVoices,
+        addEventListener: vi.fn((_evt: string, cb: () => void) => {
+          cb();
+        }),
+        removeEventListener: vi.fn(),
+        speak: vi.fn(),
+        cancel: vi.fn(),
+      },
+      writable: true,
+      configurable: true,
+    });
+    mockGetVoices.mockReturnValueOnce([{ name: 'Custom English Female', lang: 'en-GB' }]);
+
+    render(<ConversationView userName="DJ" avatarName="Mary" sessionId="s1" />);
+    expect(mockGetVoices).toHaveBeenCalled();
+  });
+
+  it('routes plan content to OutputPanel', () => {
+    render(<ConversationView userName="DJ" avatarName="Mary" sessionId="s1" />);
+
+    simulateTextAndFlush('- [x] Set up project\n- [ ] Write tests\n- [ ] Deploy to production');
+    expect(screen.getByText(/Here's my proposed plan/i)).toBeInTheDocument();
+  });
+
+  it('handles STT interim results, errors, and onEnd callback', () => {
+    render(<ConversationView userName="DJ" avatarName="Mary" sessionId="s1" />);
+    const micBtn = screen.getByRole('button', { name: /start recording/i });
+    act(() => {
+      micBtn.click();
+    });
+
+    // Interim result
+    act(() => {
+      mockSttInstance.onResult?.({ transcript: 'partial words', isFinal: false });
+    });
+    expect(screen.getByText('partial words')).toBeInTheDocument();
+
+    // Final result
+    act(() => {
+      mockSttInstance.onResult?.({ transcript: 'final command', isFinal: true });
+    });
+    expect(mockSendAgentMessage).toHaveBeenCalledWith('s1', 'final command');
+
+    // Trigger Microphone error, generic error, and not supported error
+    act(() => {
+      mockSttInstance.onError?.(new Error('Microphone permission denied'));
+    });
+    expect(screen.getByText(/Microphone access failed/i)).toBeInTheDocument();
+
+    act(() => {
+      screen.getByRole('button', { name: /start recording/i }).click();
+    });
+    act(() => {
+      mockSttInstance.onEnd?.();
+      mockSttInstance.onError?.(new Error('aborted'));
+    });
+    expect(screen.getByText(/Could not hear you clearly/i)).toBeInTheDocument();
+
+    act(() => {
+      screen.getByRole('button', { name: /start recording/i }).click();
+    });
+    act(() => {
+      mockSttInstance.onError?.(new Error('Failed to initialize'));
+    });
+    expect(screen.getByText(/Speech recognition is not available/i)).toBeInTheDocument();
+
+    // Clicking mic when sttSupported is false
+    act(() => {
+      screen.getByRole('button', { name: /start recording/i }).click();
+    });
+    expect(screen.getByText(/Speech recognition is not available/i)).toBeInTheDocument();
+  });
+
+  it('handles ErrorRecovery retry and setup-key actions and suggestion chip click', () => {
+    const onSetupKey = vi.fn();
+    render(
+      <ConversationView userName="DJ" avatarName="Mary" sessionId="s1" onSetupKey={onSetupKey} />,
+    );
+
+    // Trigger error with retry and setup-key options before any message sent
+    simulateAgentEvent({
+      type: 'error',
+      userMessage: 'Invalid API key',
+      recoveryOptions: [
+        { label: 'Retry now', action: 'retry', description: 'Retry' },
+        { label: 'Update key', action: 'setup-key', description: 'Setup key' },
+      ],
+    });
+
+    act(() => {
+      screen.getByText('Retry now').click();
+    });
+    expect(screen.getByText(/Type your message to try again/i)).toBeInTheDocument();
+
+    // Trigger error again and click Update key
+    simulateAgentEvent({
+      type: 'error',
+      userMessage: 'Invalid API key',
+      recoveryOptions: [{ label: 'Update key', action: 'setup-key', description: 'Setup key' }],
+    });
+    act(() => {
+      screen.getByText('Update key').click();
+    });
+    expect(onSetupKey).toHaveBeenCalledOnce();
+
+    // Click suggestion chip
+    simulateAgentEvent({ type: 'suggestion', suggestions: ['Run tests'] });
+    act(() => {
+      screen.getByText('Run tests').click();
+    });
+    expect(mockSendAgentMessage).toHaveBeenCalledWith('s1', 'Run tests');
+  });
+
+  it('dismisses QuestionCardStack when Close questions button is clicked', () => {
+    render(<ConversationView userName="DJ" avatarName="Mary" sessionId="s1" />);
+
+    simulateTextAndFlush(
+      'Two questions:\n1. **Platform** — Which platform?\n2. **Timeline** — When do you need it?',
+    );
+
+    expect(screen.getByText('Platform')).toBeInTheDocument();
+    const dismissBtn = screen.getByRole('button', { name: /close questions/i });
+    act(() => {
+      dismissBtn.click();
+    });
+    expect(screen.queryByText('Platform')).not.toBeInTheDocument();
+  });
+
+  it('handles voice barge-in, no-preamble questions, long-preamble questions, multi-chunk text, and timer cleanup', () => {
+    vi.useFakeTimers();
+    const { unmount } = render(<ConversationView userName="DJ" avatarName="Mary" sessionId="s1" />);
+
+    // 1. Multi-chunk text accumulation before flush
+    simulateAgentEvent({ type: 'text', content: 'Chunk one' });
+    simulateAgentEvent({ type: 'text', content: 'Chunk two' });
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(screen.getByText(/Chunk one/i)).toBeInTheDocument();
+
+    // 2. Questions with empty preamble
+    simulateAgentEvent({
+      type: 'text',
+      content: '1. **Platform** — iOS or Android?\n2. **Database** — SQL or NoSQL?',
+    });
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(screen.getByText('Platform')).toBeInTheDocument();
+
+    // 3. Questions with long document preamble (> 600 chars)
+    const longPreamble = `# Specification\n\n${'Detailed architectural context and background information. '.repeat(15)}`;
+    simulateAgentEvent({
+      type: 'text',
+      content: `${longPreamble}\n\n1. **Auth** — OAuth or JWT?\n2. **Hosting** — AWS or GCP?`,
+    });
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(screen.getByText('Auth')).toBeInTheDocument();
+
+    // 4. Consecutive progress events + error clearing active timers
+    simulateAgentEvent({ type: 'text', content: 'Buffered text' });
+    simulateAgentEvent({ type: 'progress', step: 'Step 1', status: 'in-progress' });
+    simulateAgentEvent({ type: 'progress', step: 'Step 2', status: 'in-progress' });
+    simulateAgentEvent({ type: 'error', userMessage: 'Interrupted', recoveryOptions: [] });
+    expect(screen.getByText('Interrupted')).toBeInTheDocument();
+
+    // 5. Complete clearing active timers
+    simulateAgentEvent({ type: 'text', content: 'Final answer' });
+    simulateAgentEvent({ type: 'progress', step: 'Step 3', status: 'in-progress' });
+    simulateAgentEvent({ type: 'complete', summary: 'Done' });
+
+    // 6. Voice barge-in during live mode speaking
+    act(() => {
+      screen.getByRole('button', { name: /start recording/i }).click();
+    });
+    mockSttInstance.isListening = false;
+    simulateAgentEvent({ type: 'text', content: 'Speaking now' });
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    act(() => {
+      mockSttInstance.onResult?.({ transcript: 'barge in message', isFinal: true });
+    });
+    expect(mockSendAgentMessage).toHaveBeenCalledWith('s1', 'barge in message');
+
+    // 7. Unmount with active timers
+    simulateAgentEvent({ type: 'text', content: 'Pending on unmount' });
+    simulateAgentEvent({ type: 'progress', step: 'Pending progress', status: 'in-progress' });
+    unmount();
+    vi.useRealTimers();
   });
 });

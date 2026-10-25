@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { classifyError, createUserFriendlyMessage } from './agent-error';
+import {
+  classifyError,
+  createUserFriendlyMessage,
+  recoveryOptionsForCategory,
+} from './agent-error';
 
 describe('classifyError', () => {
   it('classifies network errors', () => {
@@ -10,6 +14,10 @@ describe('classifyError', () => {
   it('classifies auth errors', () => {
     expect(classifyError(new Error('401 Unauthorized'))).toBe('auth-error');
     expect(classifyError(new Error('invalid api key'))).toBe('auth-error');
+  });
+
+  it('classifies billing errors', () => {
+    expect(classifyError(new Error('credit balance is too low'))).toBe('billing-error');
   });
 
   it('classifies rate limit errors', () => {
@@ -31,6 +39,17 @@ describe('classifyError', () => {
   it('returns unknown for unrecognized errors', () => {
     expect(classifyError(new Error('something else'))).toBe('unknown');
     expect(classifyError('string error')).toBe('unknown');
+    expect(classifyError(null)).toBe('unknown');
+  });
+});
+
+describe('recoveryOptionsForCategory', () => {
+  it('returns category-specific recovery options', () => {
+    expect(recoveryOptionsForCategory('auth-error')).toHaveLength(2);
+    expect(recoveryOptionsForCategory('billing-error')).toHaveLength(1);
+    expect(recoveryOptionsForCategory('rate-limit')).toHaveLength(1);
+    expect(recoveryOptionsForCategory('network-error')).toHaveLength(1);
+    expect(recoveryOptionsForCategory('unknown')).toHaveLength(1);
   });
 });
 
@@ -38,6 +57,7 @@ describe('createUserFriendlyMessage', () => {
   it('returns friendly messages for each category', () => {
     expect(createUserFriendlyMessage('network-error')).toContain('trouble reaching');
     expect(createUserFriendlyMessage('auth-error')).toContain('API key');
+    expect(createUserFriendlyMessage('billing-error')).toContain('credits');
     expect(createUserFriendlyMessage('rate-limit')).toContain('busy');
     expect(createUserFriendlyMessage('unknown')).toContain('went wrong');
   });

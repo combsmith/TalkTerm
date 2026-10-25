@@ -15,8 +15,10 @@ export function createMockIpcMain(): {
   return { ipcMain, handlers };
 }
 
-export function createMockWebContents(): { send: ReturnType<typeof vi.fn> } {
+export function createMockWebContents(): {
+  send: ReturnType<typeof vi.fn<(channel: string, ...args: unknown[]) => void>>;
+} {
   return {
-    send: vi.fn(),
+    send: vi.fn<(channel: string, ...args: unknown[]) => void>(),
   };
 }

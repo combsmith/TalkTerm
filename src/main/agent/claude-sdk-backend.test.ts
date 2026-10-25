@@ -802,6 +802,99 @@ describe('ClaudeSdkBackend', () => {
         expect(toolCallEvent.toolName).toBe('Bash');
       }
     });
+
+    it('maps edge-case SDK messages: rate_limit_event, api_retry, tool_result variants, empty auth_status, and fallback system messages', async () => {
+      const sdkMock = mockSdkModule([
+        {
+          type: 'auth_status',
+          isAuthenticating: false,
+          output: [],
+          session_id: 'sess-42',
+        },
+        {
+          type: 'assistant',
+          message: {
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: 'tu-err',
+                content: 'E'.repeat(100),
+                is_error: true,
+              },
+              {
+                type: 'tool_result',
+                tool_use_id: 'tu-empty',
+                content: '   ',
+              },
+              {
+                type: 'unknown_block' as 'text',
+                text: 'ignored',
+              },
+            ],
+          },
+          session_id: 'sess-42',
+        },
+        {
+          type: 'rate_limit_event',
+          session_id: 'sess-42',
+        },
+        {
+          type: 'user',
+          session_id: 'sess-42',
+        },
+        {
+          type: 'system',
+          subtype: 'task_started',
+          task_id: 't-no-desc',
+          session_id: 'sess-42',
+        },
+        {
+          type: 'system',
+          subtype: 'task_notification',
+          task_id: 't-default-complete',
+          session_id: 'sess-42',
+        },
+        {
+          type: 'system',
+          subtype: 'task_notification',
+          task_id: 't-default-fail',
+          status: 'failed',
+          session_id: 'sess-42',
+        },
+        {
+          type: 'system',
+          subtype: 'api_retry',
+          session_id: 'sess-42',
+        },
+        {
+          type: 'result',
+          subtype: 'success',
+          result: '',
+          total_cost_usd: 0,
+          num_turns: 1,
+          session_id: 'sess-42',
+        },
+        {
+          type: 'result',
+          subtype: 'error_during_execution',
+          session_id: 'sess-42',
+        },
+      ]);
+      installSdkMock(sdkMock);
+
+      const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
+      const events = await collectEvents(backend.sendMessage('sess-42', 'hello'));
+
+      expect(events.some((e) => e.type === 'progress' && e.status === 'failed')).toBe(true);
+      expect(
+        events.some((e) => e.type === 'progress' && e.step === 'Waiting for API availability...'),
+      ).toBe(true);
+      expect(events.some((e) => e.type === 'progress' && e.step === 'Processing...')).toBe(true);
+      expect(events.some((e) => e.type === 'complete' && e.summary === 'Task completed')).toBe(
+        true,
+      );
+      expect(events.some((e) => e.type === 'error')).toBe(true);
+    });
   });
 
   describe('BMAD context loading', () => {

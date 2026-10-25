@@ -139,8 +139,7 @@ describe('SpeechIPCHandler', () => {
   });
 
   it('wires onError before initialize and aborts start if initialize reports an error via onError', async () => {
-    const initMock = mockStt.initialize as ReturnType<typeof vi.fn>;
-    initMock.mockImplementation(() => {
+    mockStt.initialize = vi.fn(() => {
       mockStt.onError?.('Recognizer init failed');
       return Promise.resolve();
     });
@@ -216,6 +215,44 @@ describe('SpeechIPCHandler', () => {
       await expect(startHandler({} as IpcMainInvokeEvent)).resolves.toBeUndefined();
     }
 
+    mockStt.onResult?.({ transcript: 'hi', isFinal: true });
+    mockStt.onError?.('err');
+    mockStt.onEnd?.();
+
+    mockStt.initialize = vi.fn().mockRejectedValue('string error');
+    if (startHandler !== undefined) {
+      await expect(startHandler({} as IpcMainInvokeEvent)).resolves.toBeUndefined();
+    }
+
     expect(mockStt.initialize).toHaveBeenCalled();
+  });
+
+  it('catches errors thrown by stt.stop and stt.acceptAudio', () => {
+    handler.register(mockIpcMain as IpcMain);
+    Object.defineProperty(mockStt, 'isListening', { value: true, configurable: true });
+
+    const stopHandler = ipcHandlers[IPC_CHANNELS.AUDIO_STOP];
+    mockStt.stop = vi.fn(() => {
+      throw new Error('stop error');
+    });
+    void stopHandler?.({} as IpcMainEvent);
+
+    mockStt.stop = vi.fn(() => {
+      throw 'stop string error'; // eslint-disable-line @typescript-eslint/only-throw-error
+    });
+    void stopHandler?.({} as IpcMainEvent);
+
+    const dataHandler = ipcHandlers[IPC_CHANNELS.AUDIO_DATA];
+    mockStt.acceptAudio = vi.fn(() => {
+      throw new Error('accept error');
+    });
+    void dataHandler?.({} as IpcMainEvent, new ArrayBuffer(4));
+
+    mockStt.acceptAudio = vi.fn(() => {
+      throw 'accept string error'; // eslint-disable-line @typescript-eslint/only-throw-error
+    });
+    void dataHandler?.({} as IpcMainEvent, new ArrayBuffer(4));
+
+    expect(mockStt.acceptAudio).toHaveBeenCalled();
   });
 });
