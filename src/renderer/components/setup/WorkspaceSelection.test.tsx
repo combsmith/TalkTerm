@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { WorkspaceSelection } from './WorkspaceSelection';
@@ -108,9 +108,12 @@ describe('WorkspaceSelection', () => {
 
     await user.click(screen.getByRole('button', { name: /browse/i }));
     expect(browseWorkspace).toHaveBeenCalledOnce();
-    expect(screen.getByTestId('selected-folder')).toHaveTextContent('/picked/workspace');
+    const folderEl = await screen.findByTestId('selected-folder');
+    expect(folderEl).toHaveTextContent('/picked/workspace');
 
-    vi.advanceTimersByTime(1200);
+    act(() => {
+      vi.advanceTimersByTime(1200);
+    });
     expect(onSelectFolder).toHaveBeenCalledWith('/picked/workspace');
     vi.useRealTimers();
   });
