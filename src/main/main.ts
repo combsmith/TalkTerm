@@ -60,7 +60,7 @@ function createMainWindow(adminResult: AdminCheckResult): void {
     title: 'TalkTerm',
     backgroundColor: '#1A1A1A',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
