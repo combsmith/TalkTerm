@@ -121,10 +121,8 @@ function parseNumberedQuestions(text: string): QuestionSet | null {
     blocks.push(collectBlockLines(lines, start, end, isLastItem));
   }
 
-  // Question-ness heuristic: blocks should look like questions or labeled prompts
-  const looksLikeQuestions = blocks.some((block) =>
-    block.some((line) => line.includes('?') || /\*\*.+\*\*/.test(line) || line.includes('—')),
-  );
+  // Question-ness heuristic: at least one numbered block must contain a question mark
+  const looksLikeQuestions = blocks.some((block) => block.some((line) => line.includes('?')));
   if (!looksLikeQuestions) return null;
 
   const firstIdx = numberedIndices[0] ?? 0;

@@ -6,11 +6,16 @@ import type { ConfigStore } from '../storage/electron-config-store';
 import type { IPCMain, IPCRegistrar } from './ipc-registrar';
 import { validateString } from './validate-string';
 
+export interface SessionStarter {
+  startSession(config: { workspacePath: string; apiKey: string }): Promise<void>;
+}
+
 export class SessionIPCHandler implements IPCRegistrar {
   constructor(
     private readonly sessionRepo: SessionRepository,
     private readonly configStore: ConfigStore,
     private readonly keyManager?: KeyManager,
+    private readonly agentRouter?: SessionStarter,
   ) {}
 
   register(ipcMain: IPCMain): void {
@@ -27,6 +32,12 @@ export class SessionIPCHandler implements IPCRegistrar {
           : 'mary';
       const session = createSession(validPath, avatarId);
       this.sessionRepo.save(session);
+      if (this.agentRouter !== undefined) {
+        void this.agentRouter.startSession({
+          workspacePath: validPath,
+          apiKey: this.keyManager?.retrieveKey() ?? '',
+        });
+      }
       return session.id;
     });
 

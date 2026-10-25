@@ -18,6 +18,14 @@ const MODEL_FILES = [
   'joiner-epoch-99-avg-1.int8.onnx',
   'tokens.txt',
 ] as const;
+const MODEL_MIN_BYTES: Record<(typeof MODEL_FILES)[number], number> = {
+  'encoder-epoch-99-avg-1.int8.onnx': 1_000_000,
+  'decoder-epoch-99-avg-1.int8.onnx': 100_000,
+  'joiner-epoch-99-avg-1.int8.onnx': 100_000,
+  'tokens.txt': 100,
+};
+const DOWNLOAD_TIMEOUT_MS = 30_000;
+const MAX_REDIRECTS = 5;
 const MODEL_BASE_URL =
   'https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-20M-2023-02-17/resolve/main';
 
@@ -30,6 +38,11 @@ export type SherpaResultCallback = (result: SherpaResult) => void;
 export type SherpaErrorCallback = (error: string) => void;
 export type SherpaEndCallback = () => void;
 
+export interface SherpaOnnxSttOptions {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- sherpa-onnx-node types not available
+  createRecognizer?: (config: any) => any;
+}
+
 export class SherpaOnnxStt {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- sherpa-onnx-node types not available
   private recognizer: any = null;
@@ -38,10 +51,26 @@ export class SherpaOnnxStt {
   private _isListening = false;
   private lastText = '';
   private decodeTimer: ReturnType<typeof setInterval> | null = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private readonly createRecognizerFn: (config: any) => any;
 
   onResult: SherpaResultCallback | null = null;
   onError: SherpaErrorCallback | null = null;
   onEnd: SherpaEndCallback | null = null;
+
+  constructor(options?: SherpaOnnxSttOptions) {
+    this.createRecognizerFn =
+      options?.createRecognizer ??
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ((config: any): any => {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports -- native module loaded at runtime
+        const sherpa = require('sherpa-onnx-node') as {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          OnlineRecognizer: new (c: any) => any;
+        };
+        return new sherpa.OnlineRecognizer(config);
+      });
+  }
 
   get isListening(): boolean {
     return this._isListening;
@@ -56,7 +85,12 @@ export class SherpaOnnxStt {
 
     for (const file of MODEL_FILES) {
       const filePath = path.join(modelDir, file);
-      if (!fs.existsSync(filePath)) {
+      const minBytes = MODEL_MIN_BYTES[file];
+      const hasValidFile = fs.existsSync(filePath) && fs.statSync(filePath).size >= minBytes;
+      if (!hasValidFile) {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
         console.log(`[SherpaOnnxStt] Downloading ${file}...`);
         await this.downloadFile(`${MODEL_BASE_URL}/${file}`, filePath);
         console.log(`[SherpaOnnxStt] Downloaded ${file}`);
@@ -71,12 +105,6 @@ export class SherpaOnnxStt {
     if (this.recognizer !== null) return;
 
     const modelDir = await this.ensureModel();
-
-    // eslint-disable-next-line @typescript-eslint/no-require-imports -- native module loaded at runtime
-    const sherpa = require('sherpa-onnx-node') as {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      OnlineRecognizer: new (config: any) => any;
-    };
 
     const config = {
       featConfig: {
@@ -102,7 +130,7 @@ export class SherpaOnnxStt {
     };
 
     try {
-      this.recognizer = new sherpa.OnlineRecognizer(config);
+      this.recognizer = this.createRecognizerFn(config);
       console.log('[SherpaOnnxStt] Recognizer initialized');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -200,44 +228,61 @@ export class SherpaOnnxStt {
     }
   }
 
-  /** Download a file from URL to local path, following redirects. */
+  /** Download a file from URL to local path atomically, following redirects. */
   private async downloadFile(url: string, destPath: string): Promise<void> {
+    const tempPath = `${destPath}.tmp`;
+    const cleanupTemp = (): void => {
+      if (fs.existsSync(tempPath)) {
+        fs.unlinkSync(tempPath);
+      }
+    };
+
     return new Promise((resolve, reject) => {
-      const file = fs.createWriteStream(destPath);
-      const request = (reqUrl: string): void => {
-        https
-          .get(reqUrl, (response) => {
-            // Follow redirects (HuggingFace uses 301, 302, 303, 307, 308)
-            const code = response.statusCode ?? 0;
-            if (code >= 300 && code < 400 && response.headers.location !== undefined) {
-              const redirectUrl = new URL(response.headers.location, reqUrl).toString();
-              response.resume();
-              request(redirectUrl);
-              return;
-            }
-            if (response.statusCode !== 200) {
-              file.close();
-              fs.unlinkSync(destPath);
-              reject(
-                new Error(`HTTP ${String(response.statusCode ?? 'unknown')} downloading ${reqUrl}`),
-              );
-              return;
-            }
-            response.pipe(file);
-            file.on('finish', () => {
-              file.close();
-              resolve();
-            });
-          })
-          .on('error', (err) => {
-            file.close();
-            if (fs.existsSync(destPath)) {
-              fs.unlinkSync(destPath);
-            }
-            reject(err);
-          });
+      const file = fs.createWriteStream(tempPath);
+      const fail = (err: Error): void => {
+        file.close();
+        cleanupTemp();
+        reject(err);
       };
-      request(url);
+
+      const request = (reqUrl: string, redirectsLeft: number): void => {
+        const req = https.get(reqUrl, (response) => {
+          // Follow redirects (HuggingFace uses 301, 302, 303, 307, 308)
+          const code = response.statusCode ?? 0;
+          if (code >= 300 && code < 400 && response.headers.location !== undefined) {
+            if (redirectsLeft <= 0) {
+              response.resume();
+              fail(new Error(`Too many redirects downloading ${reqUrl}`));
+              return;
+            }
+            const redirectUrl = new URL(response.headers.location, reqUrl).toString();
+            response.resume();
+            request(redirectUrl, redirectsLeft - 1);
+            return;
+          }
+          if (code !== 200) {
+            response.resume();
+            fail(new Error(`HTTP ${String(code)} downloading ${reqUrl}`));
+            return;
+          }
+          file.on('finish', () => {
+            file.close();
+            fs.renameSync(tempPath, destPath);
+            resolve();
+          });
+          response.pipe(file);
+        });
+
+        req.on('error', (err) => {
+          fail(err);
+        });
+
+        req.setTimeout(DOWNLOAD_TIMEOUT_MS, () => {
+          req.destroy(new Error(`Timeout downloading ${reqUrl}`));
+        });
+      };
+
+      request(url, MAX_REDIRECTS);
     });
   }
 }

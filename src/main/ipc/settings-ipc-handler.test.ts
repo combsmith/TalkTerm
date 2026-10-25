@@ -58,6 +58,25 @@ describe('SettingsIPCHandler', () => {
     });
   });
 
+  it('delegates to verifyApiKey callback when provided on SETTINGS_VALIDATE_KEY', async () => {
+    const verifyMock = vi
+      .fn()
+      .mockResolvedValueOnce({ valid: false, message: 'Invalid or revoked API key.' });
+    const handler = new SettingsIPCHandler(
+      createMockKeyManager(),
+      new InMemoryConfigStore(),
+      undefined,
+      verifyMock,
+    );
+    handler.register(ipcMain);
+    const validate = handlers.get(IPC_CHANNELS.SETTINGS_VALIDATE_KEY);
+    await expect(validate?.({}, 'sk-ant-api03-revoked')).resolves.toEqual({
+      valid: false,
+      message: 'Invalid or revoked API key.',
+    });
+    expect(verifyMock).toHaveBeenCalledWith('sk-ant-api03-revoked');
+  });
+
   it('returns MVP avatar roster and sets/browses workspace', async () => {
     const store = new InMemoryConfigStore();
     const browseMock = vi.fn().mockResolvedValue('/tmp/selected-workspace');

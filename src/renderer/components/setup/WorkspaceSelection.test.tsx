@@ -93,4 +93,42 @@ describe('WorkspaceSelection', () => {
     expect(onSelectFolder).toHaveBeenCalledWith('/my/project');
     vi.useRealTimers();
   });
+
+  it('wires Browse button to window.electronAPI.browseWorkspace', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const onSelectFolder = vi.fn();
+    const browseWorkspace = vi.fn().mockResolvedValueOnce('/picked/workspace');
+    Object.defineProperty(window, 'electronAPI', {
+      value: { browseWorkspace },
+      writable: true,
+      configurable: true,
+    });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<WorkspaceSelection onSelectFolder={onSelectFolder} onSkip={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: /browse/i }));
+    expect(browseWorkspace).toHaveBeenCalledOnce();
+    expect(screen.getByTestId('selected-folder')).toHaveTextContent('/picked/workspace');
+
+    vi.advanceTimersByTime(1200);
+    expect(onSelectFolder).toHaveBeenCalledWith('/picked/workspace');
+    vi.useRealTimers();
+  });
+
+  it('does not confirm when browseWorkspace returns null (user cancelled dialog)', async () => {
+    const onSelectFolder = vi.fn();
+    const browseWorkspace = vi.fn().mockResolvedValueOnce(null);
+    Object.defineProperty(window, 'electronAPI', {
+      value: { browseWorkspace },
+      writable: true,
+      configurable: true,
+    });
+    const user = userEvent.setup();
+    render(<WorkspaceSelection onSelectFolder={onSelectFolder} onSkip={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: /browse/i }));
+    expect(browseWorkspace).toHaveBeenCalledOnce();
+    expect(screen.queryByTestId('selected-folder')).not.toBeInTheDocument();
+    expect(onSelectFolder).not.toHaveBeenCalled();
+  });
 });

@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 
 export interface AdminCheckResult {
   isAdmin: boolean;
@@ -48,13 +48,25 @@ function checkMacOsAdminGroup(): boolean {
   }
 }
 
+function checkWindowsElevated(): boolean {
+  try {
+    execFileSync('C:\\Windows\\System32\\net.exe', ['session'], {
+      stdio: 'ignore',
+      timeout: 3000,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function checkAdminPrivileges(options?: AdminCheckOptions): AdminCheckResult {
   const platform = process.platform;
 
   let isAdmin: boolean;
 
   if (platform === 'win32') {
-    isAdmin = options?.isElevated === true;
+    isAdmin = options?.isElevated ?? checkWindowsElevated();
   } else if (platform === 'darwin') {
     isAdmin = checkUnixRoot() || checkMacOsAdminGroup();
   } else {

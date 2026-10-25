@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactElement } from 'react';
+import { useRef, type ReactElement } from 'react';
 import type { AvatarAnimationState } from '../../hooks/useAvatarState';
 
 interface AvatarCanvasProps {
@@ -7,23 +7,13 @@ interface AvatarCanvasProps {
 }
 
 /**
- * AvatarCanvas renders the Rive animated avatar character.
+ * AvatarCanvas renders the animated avatar character.
  *
- * When the .riv asset is available, it uses @rive-app/react-webgl2 to render
- * the state machine with inputs: isListening, isThinking, isSpeaking.
- *
- * Fallback: renders a simple CSS-animated placeholder avatar.
+ * When a .riv asset path is provided, it renders a canvas element ready for
+ * Rive runtime binding; otherwise it renders a CSS-animated placeholder avatar.
  */
 export function AvatarCanvas({ state, riveAssetPath }: AvatarCanvasProps): ReactElement {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    // When Rive asset is available, initialize the state machine here.
-    // For now, the placeholder renders based on state prop.
-    if (riveAssetPath !== undefined && canvasRef.current !== null) {
-      // Future: new Rive({ canvas: canvasRef.current, src: riveAssetPath, ... })
-    }
-  }, [riveAssetPath]);
 
   // Placeholder avatar — will be replaced by Rive canvas
   const stateColors: Record<AvatarAnimationState, string> = {

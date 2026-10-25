@@ -40,6 +40,7 @@ export class IpcSpeechStt implements SpeechToText {
     });
     this.unsubEnd = window.electronAPI.onAudioEnd(() => {
       this._isListening = false;
+      this.teardownCapture();
       this.onEnd?.();
     });
 
@@ -50,7 +51,13 @@ export class IpcSpeechStt implements SpeechToText {
   stop(): void {
     if (!this._isListening && this.audioContext === null && this.mediaStream === null) return;
     this._isListening = false;
+    this.teardownCapture();
 
+    // Tell main process to stop
+    void window.electronAPI.stopAudioCapture();
+  }
+
+  private teardownCapture(): void {
     // Stop audio capture
     if (this.processorNode !== null) {
       /* eslint-disable @typescript-eslint/no-deprecated -- ScriptProcessorNode cleanup */
@@ -79,9 +86,6 @@ export class IpcSpeechStt implements SpeechToText {
     this.unsubResult = null;
     this.unsubError = null;
     this.unsubEnd = null;
-
-    // Tell main process to stop
-    void window.electronAPI.stopAudioCapture();
   }
 
   private isStillListening(): boolean {

@@ -257,4 +257,28 @@ describe('QuestionCardStack', () => {
     const textarea = screen.getByPlaceholderText(/your answer/i);
     expect(textarea).toHaveAttribute('aria-label');
   });
+
+  it('resets state when questionSet prop changes to a new set', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<QuestionCardStack {...defaultProps} />);
+
+    // Type an answer and advance to question 2
+    await user.type(screen.getByPlaceholderText(/your answer/i), 'iOS');
+    await user.click(screen.getByRole('button', { name: /next question/i }));
+    expect(screen.getByTestId('question-progress')).toHaveTextContent('2 of 3');
+
+    // Swap to a new shorter question set
+    const newSet: QuestionSet = {
+      preamble: 'Follow-up questions:',
+      questions: [
+        { index: 1, title: 'Deployment', body: 'Cloud or on-prem?', suggestions: [] },
+        { index: 2, title: 'Budget', body: 'Monthly cap?', suggestions: [] },
+      ],
+    };
+    rerender(<QuestionCardStack {...defaultProps} questionSet={newSet} />);
+
+    expect(screen.getByTestId('question-progress')).toHaveTextContent('1 of 2');
+    expect(screen.getByText('Deployment')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/your answer/i)).toHaveValue('');
+  });
 });

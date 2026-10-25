@@ -1,4 +1,4 @@
-import { useReducer, type ReactElement } from 'react';
+import { useEffect, useReducer, useRef, type ReactElement } from 'react';
 import type { QuestionSet } from '../../../shared/types/domain/question-parser';
 import { QuestionReview } from './QuestionReview';
 import { SuggestionChips } from './SuggestionChips';
@@ -28,7 +28,8 @@ type CardStackAction =
   | { type: 'set-answer'; index: number; text: string }
   | { type: 'toggle-chip'; questionIndex: number; chip: string }
   | { type: 'show-review' }
-  | { type: 'edit-from-review'; index: number };
+  | { type: 'edit-from-review'; index: number }
+  | { type: 'reset'; total: number };
 
 function reducer(state: CardStackState, action: CardStackAction): CardStackState {
   switch (action.type) {
@@ -76,6 +77,8 @@ function reducer(state: CardStackState, action: CardStackAction): CardStackState
       return { ...state, showReview: true };
     case 'edit-from-review':
       return { ...state, showReview: false, currentIndex: action.index };
+    case 'reset':
+      return createInitialState(action.total);
     /* c8 ignore next 3 */
     default:
       const _exhaustive: never = action;
@@ -103,6 +106,14 @@ export function QuestionCardStack({
 }: QuestionCardStackProps): ReactElement {
   const total = questionSet.questions.length;
   const [state, dispatch] = useReducer(reducer, total, createInitialState);
+  const prevQuestionSetRef = useRef(questionSet);
+
+  useEffect(() => {
+    if (prevQuestionSetRef.current !== questionSet) {
+      prevQuestionSetRef.current = questionSet;
+      dispatch({ type: 'reset', total: questionSet.questions.length });
+    }
+  }, [questionSet]);
 
   const currentQuestion = questionSet.questions[state.currentIndex];
   if (currentQuestion === undefined) {

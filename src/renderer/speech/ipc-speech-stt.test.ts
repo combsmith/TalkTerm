@@ -142,7 +142,7 @@ describe('IpcSpeechStt', () => {
     expect(mockStopAudioCapture).toHaveBeenCalledTimes(1);
   });
 
-  it('handles IPC error and end callbacks', async () => {
+  it('handles IPC error and end callbacks and tears down capture on audio end', async () => {
     const stt = new IpcSpeechStt();
     const onError = vi.fn();
     const onEnd = vi.fn();
@@ -154,12 +154,29 @@ describe('IpcSpeechStt', () => {
       expect(mockProcessorConnect).toHaveBeenCalled();
     });
 
+    errorCallback?.('ASR failure');
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'ASR failure' }));
+    expect(mockStopAudioCapture).toHaveBeenCalledTimes(1);
+
+    // Restart and trigger endCallback from main process
+    mockTrackStop.mockClear();
+    mockAudioContextClose.mockClear();
+    mockProcessorDisconnect.mockClear();
+    mockStopAudioCapture.mockClear();
+
+    stt.start();
+    await vi.waitFor(() => {
+      expect(mockProcessorConnect).toHaveBeenCalledTimes(2);
+    });
+
     endCallback?.();
     expect(stt.isListening).toBe(false);
     expect(onEnd).toHaveBeenCalledTimes(1);
-
-    errorCallback?.('ASR failure');
-    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'ASR failure' }));
+    expect(mockTrackStop).toHaveBeenCalledTimes(1);
+    expect(mockAudioContextClose).toHaveBeenCalledTimes(1);
+    expect(mockProcessorDisconnect).toHaveBeenCalledTimes(1);
+    // Main process already ended; do not send redundant stopAudioCapture
+    expect(mockStopAudioCapture).not.toHaveBeenCalled();
   });
 
   it('aborts startCapture cleanly if stop() is called while getUserMedia is pending', async () => {

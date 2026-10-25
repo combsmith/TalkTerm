@@ -693,6 +693,7 @@ export function ConversationView({
             />
           ) : (
             <QuestionCardStack
+              key={activeQuestionSet.questions.map((q) => q.title).join('|')}
               questionSet={activeQuestionSet}
               avatarName={avatarName}
               onSubmit={handleQuestionSubmit}

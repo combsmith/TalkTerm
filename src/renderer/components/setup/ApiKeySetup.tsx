@@ -72,8 +72,17 @@ export function ApiKeySetup({
     }
 
     if (key.startsWith('sk-ant-api')) {
-      setIsValid(true);
-      setError(null);
+      const validateApiKey = (
+        window as { electronAPI?: { validateApiKey?: typeof window.electronAPI.validateApiKey } }
+      ).electronAPI?.validateApiKey;
+      if (typeof validateApiKey === 'function') {
+        const result = await validateApiKey(key);
+        setIsValid(result.valid);
+        setError(result.valid ? null : (result.message ?? 'Invalid API key.'));
+      } else {
+        setIsValid(true);
+        setError(null);
+      }
     } else {
       setIsValid(false);
       setError("That key didn't work — API keys start with sk-ant-api03-");

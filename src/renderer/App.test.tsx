@@ -31,7 +31,7 @@ beforeEach(() => {
       browseWorkspace: vi.fn().mockResolvedValue(null),
       setWorkspace: vi.fn().mockResolvedValue(undefined),
       assessLaunchState: vi.fn().mockResolvedValue({
-        apiKeyValid: true,
+        apiKeyValid: false,
         envKeyDetected: false,
         profileComplete: false,
         avatarSelected: false,
@@ -210,9 +210,11 @@ describe('App', () => {
     expect(await screen.findByPlaceholderText(/speak to Mary/i)).toBeInTheDocument();
   });
 
-  it('handles workspace skip and startSession failure fallback', async () => {
+  it('handles workspace skip and surfaces error with retry when startSession fails', async () => {
     const user = userEvent.setup();
-    vi.mocked(window.electronAPI.startSession).mockRejectedValueOnce(new Error('IPC error'));
+    vi.mocked(window.electronAPI.startSession)
+      .mockRejectedValueOnce(new Error('IPC error'))
+      .mockResolvedValueOnce('recovered-session-id');
 
     render(<App />);
     passAdminCheck();
@@ -227,9 +229,35 @@ describe('App', () => {
     // Avatar selection
     await user.click(screen.getByRole('button', { name: /select mary/i }));
 
-    // Auto-advances from greeting (no incomplete sessions) and falls back when startSession rejects
-    expect(
-      await screen.findByPlaceholderText(/speak to Mary/i, {}, { timeout: 3000 }),
-    ).toBeInTheDocument();
+    // Auto-advances from greeting (no incomplete sessions) and shows error when startSession rejects
+    const retryBtn = await screen.findByRole(
+      'button',
+      { name: /retry session/i },
+      { timeout: 3000 },
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(/IPC error/i);
+
+    await user.click(retryBtn);
+    expect(await screen.findByPlaceholderText(/speak to Mary/i)).toBeInTheDocument();
+  });
+
+  it('skips setup wizard for returning users when assessLaunchState reports all steps complete', async () => {
+    vi.mocked(window.electronAPI.assessLaunchState).mockResolvedValue({
+      apiKeyValid: true,
+      profileComplete: true,
+      avatarSelected: true,
+      workspaceSelected: true,
+    });
+    vi.mocked(window.electronAPI.getProfile).mockResolvedValue({
+      name: 'ReturningAlice',
+      avatarPersonaId: 'mary',
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+
+    render(<App />);
+    passAdminCheck();
+
+    expect(await screen.findByText(/Hey ReturningAlice/i)).toBeInTheDocument();
   });
 });

@@ -1018,7 +1018,40 @@ describe('ClaudeSdkBackend', () => {
   });
 
   describe('debug logging', () => {
-    it('logs SDK query params to console', async () => {
+    it('does not log SDK debug output by default when TALKTERM_DEBUG_SDK is unset', async () => {
+      delete process.env['TALKTERM_DEBUG_SDK'];
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      const sdkMock = mockSdkModule([
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: 'Response' }] },
+          session_id: 'sess-42',
+        },
+        {
+          type: 'result',
+          subtype: 'success',
+          result: 'Done',
+          total_cost_usd: 0.001,
+          num_turns: 1,
+          session_id: 'sess-42',
+        },
+      ]);
+      installSdkMock(sdkMock);
+
+      const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
+      await collectEvents(backend.sendMessage('sess-42', 'hello'));
+
+      const debugCalls = consoleSpy.mock.calls
+        .filter((call): call is [string, ...unknown[]] => typeof call[0] === 'string')
+        .filter((call) => call[0].includes('[SDK Debug]'));
+      expect(debugCalls).toHaveLength(0);
+
+      consoleSpy.mockRestore();
+    });
+
+    it('logs SDK query params to console when TALKTERM_DEBUG_SDK is enabled', async () => {
+      process.env['TALKTERM_DEBUG_SDK'] = '1';
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
       const sdkMock = mockSdkModule([
@@ -1050,15 +1083,17 @@ describe('ClaudeSdkBackend', () => {
       const queryLog = debugCalls.find((call) => call[0].includes('sendMessage query()'));
       expect(queryLog).toBeDefined();
 
-      // Should redact env
+      // Should redact env and prompt
       const logContent = queryLog?.[1] as string;
       expect(logContent).toContain('[redacted]');
       expect(logContent).not.toContain('sk-ant-test-key');
 
       consoleSpy.mockRestore();
+      delete process.env['TALKTERM_DEBUG_SDK'];
     });
 
-    it('logs SDK messages and mapped UI events', async () => {
+    it('logs SDK messages and mapped UI events when TALKTERM_DEBUG_SDK is enabled', async () => {
+      process.env['TALKTERM_DEBUG_SDK'] = 'true';
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
       const sdkMock = mockSdkModule([
@@ -1094,6 +1129,46 @@ describe('ClaudeSdkBackend', () => {
       expect(outgoingLogs.length).toBeGreaterThan(0);
 
       consoleSpy.mockRestore();
+      delete process.env['TALKTERM_DEBUG_SDK'];
+    });
+
+    it('emits confirm-request for write/execute tools, enables acceptEdits on approved turns, and skips retry after tool activity', async () => {
+      const sdkMock = mockSdkModule([
+        {
+          type: 'assistant',
+          message: {
+            content: [
+              {
+                type: 'tool_use',
+                id: 'tu-write',
+                name: 'Write',
+                input: { file_path: '/src/app.ts' },
+              },
+            ],
+          },
+          session_id: 'sess-42',
+        },
+        {
+          type: 'result',
+          subtype: 'error_during_execution',
+          errors: ['Failed after tool'],
+          session_id: 'sess-42',
+        },
+      ]);
+      installSdkMock(sdkMock);
+
+      const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
+      const events = await collectEvents(backend.sendMessage('sess-42', 'create app.ts'));
+
+      // Should emit confirm-request for Write tool
+      expect(events.some((e) => e.type === 'confirm-request' && e.action === 'Write')).toBe(true);
+      // Should NOT retry because tool activity already occurred
+      expect(sdkMock.query).toHaveBeenCalledTimes(1);
+
+      // Approved turn should enable acceptEdits
+      await collectEvents(backend.sendMessage('sess-42', 'approved'));
+      const approvedCall = sdkMock.query.mock.calls[1] as [{ options: { permissionMode: string } }];
+      expect(approvedCall[0].options.permissionMode).toBe('acceptEdits');
     });
   });
 

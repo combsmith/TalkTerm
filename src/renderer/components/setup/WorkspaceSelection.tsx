@@ -38,6 +38,19 @@ export function WorkspaceSelection({
     }
   }
 
+  async function handleBrowse(): Promise<void> {
+    const browseWorkspace = (
+      window as { electronAPI?: { browseWorkspace?: typeof window.electronAPI.browseWorkspace } }
+    ).electronAPI?.browseWorkspace;
+    if (typeof browseWorkspace === 'function') {
+      const selected = await browseWorkspace();
+      if (selected !== null && selected.trim() !== '') {
+        setPath(selected);
+        setConfirmed(true);
+      }
+    }
+  }
+
   if (confirmed) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-stage-bg">
@@ -63,17 +76,28 @@ export function WorkspaceSelection({
           skip to get started with BMAD defaults.
         </p>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-          <input
-            ref={inputRef}
-            type="text"
-            value={path}
-            onChange={(e) => {
-              setPath(e.target.value);
-            }}
-            placeholder="/path/to/your/project"
-            className="w-full rounded-lg border border-text-muted-on-dark bg-stage-bg px-4 py-3 text-body text-text-on-dark outline-none transition-colors focus:border-primary"
-            data-testid="folder-input"
-          />
+          <div className="flex gap-2">
+            <input
+              ref={inputRef}
+              type="text"
+              value={path}
+              onChange={(e) => {
+                setPath(e.target.value);
+              }}
+              placeholder="/path/to/your/project"
+              className="flex-1 rounded-lg border border-text-muted-on-dark bg-stage-bg px-4 py-3 text-body text-text-on-dark outline-none transition-colors focus:border-primary"
+              data-testid="folder-input"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                void handleBrowse();
+              }}
+              className="rounded-lg border border-text-muted-on-dark px-4 py-3 text-body text-text-on-dark transition-colors hover:border-primary"
+            >
+              Browse...
+            </button>
+          </div>
           <button
             type="submit"
             disabled={path.trim() === ''}

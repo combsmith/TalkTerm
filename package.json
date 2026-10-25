@@ -89,7 +89,6 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.83",
-    "@rive-app/react-webgl2": "^4.16.0",
     "@testing-library/dom": "^10.4.1",
     "better-sqlite3": "^12.8.0",
     "electron-squirrel-startup": "^1.0.1",

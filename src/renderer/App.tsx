@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactElement } from 'react';
+import { determineFirstIncompleteStep } from '../shared/types/domain/launch-state';
 import { ConversationView } from './components/session/ConversationView';
 import { SessionGreeting } from './components/session/SessionGreeting';
 import { AdminBlockScreen } from './components/setup/AdminBlockScreen';
@@ -21,6 +22,7 @@ export function App(): ReactElement | null {
   const [userName, setUserName] = useState('');
   const [phase, setPhase] = useState<AppPhase>('admin-check');
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionError, setSessionError] = useState<string | null>(null);
   const [workspacePath, setWorkspacePath] = useState('');
   const [adminResult, setAdminResult] = useState<AdminCheckResult | null>(null);
   const [incompleteSessions, setIncompleteSessions] = useState<
@@ -38,23 +40,34 @@ export function App(): ReactElement | null {
   }, []);
 
   async function startNewSession(): Promise<void> {
+    setSessionError(null);
     try {
       const id = await window.electronAPI.startSession(workspacePath || '/tmp');
       setSessionId(id);
       setPhase('conversation');
-    } catch {
-      // If session start fails, still enter conversation with a fallback ID
-      setSessionId(crypto.randomUUID());
-      setPhase('conversation');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to start session';
+      setSessionError(message);
     }
   }
 
-  // Handle admin check completion
+  // Handle admin check completion and assess launch state for returning users
   useEffect(() => {
     if (phase === 'admin-check' && adminResult?.isAdmin === true) {
       setPhase('setup');
+      void Promise.all([window.electronAPI.assessLaunchState(), window.electronAPI.getProfile()])
+        .then(([launchState, profile]) => {
+          if (profile !== null && profile.name !== '') {
+            setUserName(profile.name);
+          }
+          const firstStep = determineFirstIncompleteStep(launchState);
+          goToStep(firstStep);
+        })
+        .catch(() => {
+          // Default to needs-key if launch state assessment fails
+        });
     }
-  }, [phase, adminResult?.isAdmin]);
+  }, [phase, adminResult?.isAdmin, goToStep]);
 
   // Handle setup step completion
   useEffect(() => {
@@ -180,7 +193,14 @@ export function App(): ReactElement | null {
         <WorkspaceSelection
           onSelectFolder={(path: string) => {
             setWorkspacePath(path);
-            completeCurrentStep();
+            void window.electronAPI
+              .setWorkspace(path)
+              .then(() => {
+                completeCurrentStep();
+              })
+              .catch(() => {
+                completeCurrentStep();
+              });
           }}
           onSkip={() => {
             completeCurrentStep();
@@ -192,8 +212,15 @@ export function App(): ReactElement | null {
     if (currentStep === 'needs-avatar') {
       return (
         <AvatarSelection
-          onSelect={() => {
-            completeCurrentStep();
+          onSelect={(personaId: string) => {
+            void window.electronAPI
+              .selectAvatar(personaId)
+              .then(() => {
+                completeCurrentStep();
+              })
+              .catch(() => {
+                completeCurrentStep();
+              });
           }}
         />
       );
@@ -207,8 +234,27 @@ export function App(): ReactElement | null {
     );
   }
 
-  // Greeting phase — show greeting with incomplete sessions
+  // Greeting phase — show greeting with incomplete sessions or session start error
   if (phase === 'greeting') {
+    if (sessionError !== null) {
+      return (
+        <div className="flex h-screen w-screen flex-col items-center justify-center gap-4 bg-stage-bg">
+          <p className="text-body text-semantic-error" role="alert">
+            Failed to start session: {sessionError}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              void startNewSession();
+            }}
+            className="rounded-lg bg-primary px-6 py-3 text-body font-semibold text-white"
+          >
+            Retry session
+          </button>
+        </div>
+      );
+    }
+
     return (
       <SessionGreeting
         userName={userName || 'there'}

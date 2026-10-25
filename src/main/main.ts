@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { app, BrowserWindow, dialog, safeStorage, session } from 'electron';
+import { app, BrowserWindow, dialog, safeStorage, session, shell } from 'electron';
 import { IPC_CHANNELS } from '../shared/types/domain/ipc-channels';
 import type { AuthMode } from '../shared/types/ports/agent-backend';
 import { AgentMessageRouter } from './agent/agent-message-router';
@@ -13,6 +13,7 @@ import { SafeStorageKeyManager } from './security/safe-storage-key-manager';
 import { SherpaOnnxStt } from './speech/sherpa-onnx-stt';
 import { initializeDatabase } from './storage/database-initializer';
 import { ElectronConfigStore } from './storage/electron-config-store';
+import { MemoryIndexStore } from './storage/memory-index-store';
 import { SqliteAuditRepository } from './storage/sqlite-audit-repository';
 import { SqliteSessionRepository } from './storage/sqlite-session-repository';
 
@@ -39,6 +40,17 @@ declare const MAIN_WINDOW_VITE_NAME: string;
 let mainWindow: BrowserWindow | null = null;
 let cachedAdminResult: AdminCheckResult | null = null;
 
+function isTrustedAppUrl(url: string): boolean {
+  if (url.startsWith('file://')) {
+    return true;
+  }
+  const devServerUrl = MAIN_WINDOW_VITE_DEV_SERVER_URL;
+  if (devServerUrl !== undefined && devServerUrl !== '' && url.startsWith(devServerUrl)) {
+    return true;
+  }
+  return false;
+}
+
 function createMainWindow(adminResult: AdminCheckResult): void {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -51,7 +63,21 @@ function createMainWindow(adminResult: AdminCheckResult): void {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
+  });
+
+  // Restrict navigation and external window opening
+  mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+    if (!isTrustedAppUrl(navigationUrl)) {
+      event.preventDefault();
+    }
+  });
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https://') || url.startsWith('http://')) {
+      void shell.openExternal(url);
+    }
+    return { action: 'deny' };
   });
 
   // Send admin check result to renderer
@@ -111,6 +137,7 @@ function bootstrap(): void {
   initializeDatabase(db);
   const sessionRepo = new SqliteSessionRepository(db);
   const auditRepo = new SqliteAuditRepository(db);
+  const memoryStore = new MemoryIndexStore(db);
   const configStore = new ElectronConfigStore(path.join(userDataDir, 'config.json'));
 
   // 3. Security — use Electron's safeStorage for API key encryption, persisted in configStore
@@ -131,6 +158,14 @@ function bootstrap(): void {
       const mode = configStore.get('authMode');
       return mode === 'claude-subscription' ? 'claude-subscription' : 'api-key';
     },
+    (): string => {
+      const profile = configStore.get('userProfile') as { name?: string } | undefined;
+      return profile?.name !== undefined && profile.name !== '' ? profile.name : 'User';
+    },
+    (): string | null => {
+      const entries = memoryStore.findRecent(20);
+      return entries.length > 0 ? entries.map((e) => `${e.key}: ${e.value}`).join('\n') : null;
+    },
   );
   const agentRouter = new AgentMessageRouter(agentBackend);
 
@@ -142,11 +177,33 @@ function bootstrap(): void {
     () => mainWindow?.webContents ?? null,
     sessionRepo,
   );
-  const settingsHandler = new SettingsIPCHandler(keyManager, configStore, async () => {
-    const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
-    return result.canceled ? null : (result.filePaths[0] ?? null);
-  });
-  const sessionHandler = new SessionIPCHandler(sessionRepo, configStore, keyManager);
+  const settingsHandler = new SettingsIPCHandler(
+    keyManager,
+    configStore,
+    async () => {
+      const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+      return result.canceled ? null : (result.filePaths[0] ?? null);
+    },
+    async (key: string) => {
+      try {
+        const res = await fetch('https://api.anthropic.com/v1/models', {
+          headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+          signal: AbortSignal.timeout(5000),
+        });
+        if (res.status === 401 || res.status === 403) {
+          return {
+            valid: false,
+            message: 'That API key was rejected by Anthropic. Please check the key and try again.',
+          };
+        }
+        return { valid: true };
+      } catch {
+        // Network unreachable during setup — accept valid prefix so offline setup isn't blocked
+        return { valid: true };
+      }
+    },
+  );
+  const sessionHandler = new SessionIPCHandler(sessionRepo, configStore, keyManager, agentRouter);
   const sherpaOnnxStt = new SherpaOnnxStt();
   const speechHandler = new SpeechIPCHandler(sherpaOnnxStt, () => mainWindow?.webContents ?? null);
   agentHandler.register(ipcMain);
@@ -155,7 +212,11 @@ function bootstrap(): void {
   speechHandler.register(ipcMain);
 
   // 5a. Admin check and app lifecycle IPC handlers
-  ipcMain.handle(IPC_CHANNELS.ADMIN_RETRY_CHECK, () => adminResult);
+  ipcMain.handle(IPC_CHANNELS.ADMIN_RETRY_CHECK, () => {
+    const freshResult = checkAdminPrivileges();
+    cachedAdminResult = freshResult;
+    return freshResult;
+  });
   ipcMain.on(IPC_CHANNELS.QUIT_APP, () => {
     app.quit();
   });
@@ -166,17 +227,15 @@ function bootstrap(): void {
     return sessionRepo.findIncomplete(workspacePath);
   });
 
-  // 6. Grant microphone permission for Web Speech API (STT)
-  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
-    // Allow media (microphone) checks — required before SpeechRecognition.start()
-    if (permission === 'media') {
+  // 6. Grant microphone permission for Web Speech API (STT) only to trusted app URLs
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+    if (permission === 'media' && webContents !== null && isTrustedAppUrl(webContents.getURL())) {
       return true;
     }
     return false;
   });
-  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    // Allow media (microphone/camera) for Web Speech API; deny others for security
-    if (permission === 'media') {
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    if (permission === 'media' && isTrustedAppUrl(webContents.getURL())) {
       callback(true);
     } else {
       callback(false);

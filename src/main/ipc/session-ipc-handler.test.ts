@@ -110,4 +110,26 @@ describe('SessionIPCHandler', () => {
     expect(state.avatarSelected).toBe(true);
     expect(state.workspaceSelected).toBe(true);
   });
+
+  it('triggers agentRouter.startSession when SESSION_START is invoked', () => {
+    const repo = createMockSessionRepo();
+    const store = new InMemoryConfigStore();
+    const keyManager = {
+      storeKey: vi.fn(),
+      retrieveKey: vi.fn().mockReturnValue('sk-ant-api03-test'),
+      deleteKey: vi.fn(),
+      hasKey: vi.fn().mockReturnValue(true),
+    };
+    const agentRouter = {
+      startSession: vi.fn().mockResolvedValue(undefined),
+    };
+    new SessionIPCHandler(repo, store, keyManager, agentRouter).register(ipcMain);
+    const start = handlers.get(IPC_CHANNELS.SESSION_START);
+    const workspace = path.join(os.tmpdir(), 'talkterm-test-project');
+    start?.({}, workspace);
+    expect(agentRouter.startSession).toHaveBeenCalledWith({
+      workspacePath: workspace,
+      apiKey: 'sk-ant-api03-test',
+    });
+  });
 });

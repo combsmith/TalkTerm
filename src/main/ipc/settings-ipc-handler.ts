@@ -5,11 +5,16 @@ import type { ConfigStore } from '../storage/electron-config-store';
 import type { IPCMain, IPCRegistrar } from './ipc-registrar';
 import { validateString } from './validate-string';
 
+export type ApiKeyVerifier = (
+  key: string,
+) => Promise<{ valid: boolean; message?: string }> | { valid: boolean; message?: string };
+
 export class SettingsIPCHandler implements IPCRegistrar {
   constructor(
     private readonly keyManager: KeyManager,
     private readonly configStore: ConfigStore,
     private readonly browseDirectory: () => Promise<string | null> = () => Promise.resolve(null),
+    private readonly verifyApiKey?: ApiKeyVerifier,
   ) {}
 
   register(ipcMain: IPCMain): void {
@@ -23,6 +28,9 @@ export class SettingsIPCHandler implements IPCRegistrar {
         };
       }
       if (validKey.startsWith('sk-ant-api')) {
+        if (this.verifyApiKey !== undefined) {
+          return this.verifyApiKey(validKey);
+        }
         return { valid: true };
       }
       return {

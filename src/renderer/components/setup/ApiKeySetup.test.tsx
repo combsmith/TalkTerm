@@ -137,6 +137,37 @@ describe('ApiKeySetup', () => {
       await navigateToApiKeyEntry();
       expect(screen.getByText(/create a free api key/i)).toBeInTheDocument();
     });
+
+    it('surfaces main-process validateApiKey rejection error message', async () => {
+      const validateApiKey = vi.fn().mockResolvedValueOnce({
+        valid: false,
+        message: 'API key rejected by Anthropic (HTTP 401).',
+      });
+      Object.defineProperty(window, 'electronAPI', {
+        value: { validateApiKey },
+        writable: true,
+        configurable: true,
+      });
+
+      render(<ApiKeySetup {...defaultProps} />);
+      const user = await navigateToApiKeyEntry();
+
+      await user.type(
+        screen.getByPlaceholderText('sk-ant-api03-...'),
+        'sk-ant-api03-revoked-key{Enter}',
+      );
+
+      await waitFor(
+        () => {
+          expect(
+            screen.getByText(/API key rejected by Anthropic \(HTTP 401\)/i),
+          ).toBeInTheDocument();
+        },
+        { timeout: 3000 },
+      );
+
+      delete (window as { electronAPI?: unknown }).electronAPI;
+    }, 10000);
   });
 
   describe('env key detected', () => {

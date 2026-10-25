@@ -181,6 +181,11 @@ describe('parseQuestions', () => {
     expect(result).toBeNull();
   });
 
+  it('returns null for numbered plan items with bold labels and em-dashes but no question marks', () => {
+    const text = '1. **Build** — create the schema\n2. **Test** — run tests';
+    expect(parseQuestions(text)).toBeNull();
+  });
+
   // --- Dash-list format (bold headers + dash questions) ---
 
   it('parses dash-list questions under bold section headers', () => {

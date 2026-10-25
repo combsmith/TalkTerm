@@ -297,11 +297,11 @@ export class ClaudeSdkBackend implements AgentBackend {
     ]);
 
     if (agentResult.status === 'rejected') {
-      console.log(`[SDK Debug] No BMAD agent at ${agentPath}`);
+      this.debugLog(`[SDK Debug] No BMAD agent at ${agentPath}`);
       return null;
     }
 
-    console.log(`[SDK Debug] Found BMAD agent at ${agentPath}`);
+    this.debugLog(`[SDK Debug] Found BMAD agent at ${agentPath}`);
     return {
       agent: agentResult.value,
       config: configResult.status === 'fulfilled' ? configResult.value : null,
@@ -325,7 +325,7 @@ export class ClaudeSdkBackend implements AgentBackend {
     }
 
     if (candidates.length === 0) {
-      console.log('[SDK Debug] No candidates for BMAD context loading');
+      this.debugLog('[SDK Debug] No candidates for BMAD context loading');
       return null;
     }
 
@@ -340,7 +340,7 @@ export class ClaudeSdkBackend implements AgentBackend {
           break;
         }
       } catch (err) {
-        console.log(
+        this.debugLog(
           `[SDK Debug] Error checking BMAD in ${candidate}:`,
           err instanceof Error ? err.message : String(err),
         );
@@ -348,7 +348,7 @@ export class ClaudeSdkBackend implements AgentBackend {
     }
 
     if (bmad === null) {
-      console.log('[SDK Debug] No BMAD files found in any candidate directory');
+      this.debugLog('[SDK Debug] No BMAD files found in any candidate directory');
       return null;
     }
 
@@ -364,10 +364,26 @@ export class ClaudeSdkBackend implements AgentBackend {
       context += `\n<bmad-config>\n${resolvePlaceholders(bmad.config)}\n</bmad-config>`;
     }
 
-    console.log(
+    this.debugLog(
       `[SDK Debug] Loaded BMAD context (${String(context.length)} chars) from ${resolvedRoot}`,
     );
     return context;
+  }
+
+  private isDebugEnabled(): boolean {
+    const flag = process.env['TALKTERM_DEBUG_SDK'];
+    return flag === '1' || flag === 'true';
+  }
+
+  private debugLog(label: string, payload?: unknown): void {
+    if (!this.isDebugEnabled()) {
+      return;
+    }
+    if (payload !== undefined) {
+      console.log(label, typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2));
+    } else {
+      console.log(label);
+    }
   }
 
   private buildSdkEnv(apiKey: string | null): Record<string, string | undefined> {
@@ -408,7 +424,8 @@ export class ClaudeSdkBackend implements AgentBackend {
         preset: 'claude_code',
         append: appendPrompt,
       },
-      permissionMode: 'acceptEdits',
+      permissionMode: 'default',
+      allowedTools: ['Read', 'Glob', 'Grep', 'LS'],
       promptSuggestions: true,
       ...overrides,
     };
@@ -438,17 +455,10 @@ export class ClaudeSdkBackend implements AgentBackend {
       bmadContext,
     );
 
-    console.log(
-      '[SDK Debug] startSession query()',
-      JSON.stringify(
-        {
-          prompt,
-          options: { ...options, env: '[redacted]', abortController: '[AbortController]' },
-        },
-        null,
-        2,
-      ),
-    );
+    this.debugLog('[SDK Debug] startSession query()', {
+      prompt: '[redacted]',
+      options: { ...options, env: '[redacted]', abortController: '[AbortController]' },
+    });
 
     const queryObj = sdk.query({ prompt, options });
 
@@ -468,6 +478,7 @@ export class ClaudeSdkBackend implements AgentBackend {
     const bmadContext = await this.loadBmadContext(workspacePath);
     const history = this.sessionHistory.get(sessionId);
     const hasPriorTurns = history !== undefined && history.length > 1;
+    const isApproved = message.trim().toLowerCase() === 'approved';
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       this.abortController = new AbortController();
@@ -479,32 +490,34 @@ export class ClaudeSdkBackend implements AgentBackend {
         {
           cwd: workspacePath,
           maxTurns: 25,
+          maxBudgetUsd: 1.0,
           continue: useContinue,
+          ...(isApproved ? { permissionMode: 'acceptEdits', allowedTools: undefined } : {}),
         },
         bmadContext,
       );
 
-      console.log(
+      this.debugLog(
         `[SDK Debug] sendMessage query() attempt=${String(attempt + 1)}/${String(maxRetries + 1)}`,
-        JSON.stringify(
-          {
-            prompt: message,
-            sessionId,
-            continue: useContinue,
-            options: { ...options, env: '[redacted]', abortController: '[AbortController]' },
-          },
-          null,
-          2,
-        ),
+        {
+          prompt: '[redacted]',
+          sessionId,
+          continue: useContinue,
+          options: { ...options, env: '[redacted]', abortController: '[AbortController]' },
+        },
       );
 
       const queryObj = sdk.query({ prompt: message, options });
       this.activeQuery = queryObj;
 
       let hadError = false;
+      let hadToolActivity = false;
       for await (const event of this.consumeSdkStream(queryObj, sessionId)) {
-        if (event.type === 'error' && attempt < maxRetries) {
-          // Swallow error and retry
+        if (event.type === 'tool-call' || event.type === 'progress') {
+          hadToolActivity = true;
+        }
+        if (event.type === 'error' && attempt < maxRetries && !hadToolActivity) {
+          // Swallow transient pre-tool error and retry
           hadError = true;
           console.warn(
             `[SDK Debug] Error on attempt ${String(attempt + 1)}, retrying...`,
@@ -542,11 +555,12 @@ export class ClaudeSdkBackend implements AgentBackend {
           return;
         }
 
-        const msgType = `${msg.type}${(msg as { subtype?: string }).subtype !== undefined ? `:${(msg as { subtype?: string }).subtype ?? ''}` : ''}`;
-        console.log(`[SDK Debug] ← ${msgType}`, JSON.stringify(msg, null, 2));
+        const subtype = (msg as { subtype?: string }).subtype;
+        const msgType = subtype !== undefined ? `${msg.type}:${subtype}` : msg.type;
+        this.debugLog(`[SDK Debug] ← ${msgType}`, { type: msg.type, session_id: msg.session_id });
         const events = this.mapSdkMessage(msg, sessionId);
         for (const event of events) {
-          console.log(`[SDK Debug] → UI event: ${event.type}`, JSON.stringify(event));
+          this.debugLog(`[SDK Debug] → UI event: ${event.type}`, { type: event.type });
           yield event;
         }
       }
@@ -630,7 +644,29 @@ export class ClaudeSdkBackend implements AgentBackend {
     }
     if (block.type === 'tool_use') {
       const toolBlock = block as { type: 'tool_use'; name: string; input: Record<string, unknown> };
-      return [{ type: 'tool-call', toolName: toolBlock.name, toolInput: toolBlock.input }];
+      const toolCallEvent: AgentEvent = {
+        type: 'tool-call',
+        toolName: toolBlock.name,
+        toolInput: toolBlock.input,
+      };
+      const confirmTools = new Set(['Write', 'Edit', 'MultiEdit', 'Bash', 'Delete']);
+      if (confirmTools.has(toolBlock.name)) {
+        const target =
+          typeof toolBlock.input['file_path'] === 'string'
+            ? toolBlock.input['file_path']
+            : typeof toolBlock.input['command'] === 'string'
+              ? toolBlock.input['command']
+              : toolBlock.name;
+        return [
+          toolCallEvent,
+          {
+            type: 'confirm-request',
+            action: toolBlock.name,
+            description: `${toolBlock.name}: ${target}`,
+          },
+        ];
+      }
+      return [toolCallEvent];
     }
     if (block.type === 'thinking') {
       const thinkBlock = block as { type: 'thinking'; thinking: string };
