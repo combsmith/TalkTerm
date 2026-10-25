@@ -1,7 +1,10 @@
 /* eslint-disable @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any -- test mocks for https, fs, and recognizer */
 import { EventEmitter } from 'node:events';
+import path from 'node:path';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SherpaOnnxStt } from './sherpa-onnx-stt';
+
+const EXPECTED_MODEL_DIR = path.join('/tmp/user-data', 'sherpa-onnx-model');
 
 const mockExistsSync = vi.fn();
 const mockMkdirSync = vi.fn();
@@ -74,13 +77,13 @@ describe('SherpaOnnxStt', () => {
       const stt = new SherpaOnnxStt();
       const dir = await stt.ensureModel();
 
-      expect(dir).toBe('/tmp/user-data/sherpa-onnx-model');
+      expect(dir).toBe(EXPECTED_MODEL_DIR);
       expect(mockHttpsGet).not.toHaveBeenCalled();
     });
 
     it('creates model directory if missing, unlinks truncated files, and downloads atomically', async () => {
       mockExistsSync.mockImplementation((p: string) => {
-        if (p === '/tmp/user-data/sherpa-onnx-model') return false;
+        if (p === EXPECTED_MODEL_DIR) return false;
         if (p.endsWith('encoder-epoch-99-avg-1.int8.onnx')) return true; // exists but truncated
         if (p.endsWith('.tmp')) return false;
         return true;
@@ -121,15 +124,15 @@ describe('SherpaOnnxStt', () => {
       const stt = new SherpaOnnxStt();
       await stt.ensureModel();
 
-      expect(mockMkdirSync).toHaveBeenCalledWith('/tmp/user-data/sherpa-onnx-model', {
+      expect(mockMkdirSync).toHaveBeenCalledWith(EXPECTED_MODEL_DIR, {
         recursive: true,
       });
       expect(mockUnlinkSync).toHaveBeenCalledWith(
-        '/tmp/user-data/sherpa-onnx-model/encoder-epoch-99-avg-1.int8.onnx',
+        path.join(EXPECTED_MODEL_DIR, 'encoder-epoch-99-avg-1.int8.onnx'),
       );
       expect(mockRenameSync).toHaveBeenCalledWith(
-        '/tmp/user-data/sherpa-onnx-model/encoder-epoch-99-avg-1.int8.onnx.tmp',
-        '/tmp/user-data/sherpa-onnx-model/encoder-epoch-99-avg-1.int8.onnx',
+        path.join(EXPECTED_MODEL_DIR, 'encoder-epoch-99-avg-1.int8.onnx.tmp'),
+        path.join(EXPECTED_MODEL_DIR, 'encoder-epoch-99-avg-1.int8.onnx'),
       );
     });
 
@@ -156,9 +159,7 @@ describe('SherpaOnnxStt', () => {
 
       const stt = new SherpaOnnxStt();
       await expect(stt.ensureModel()).rejects.toThrow('Too many redirects');
-      expect(mockUnlinkSync).toHaveBeenCalledWith(
-        '/tmp/user-data/sherpa-onnx-model/tokens.txt.tmp',
-      );
+      expect(mockUnlinkSync).toHaveBeenCalledWith(path.join(EXPECTED_MODEL_DIR, 'tokens.txt.tmp'));
     });
 
     it('rejects and cleans up temp file on non-200 HTTP status', async () => {
@@ -184,9 +185,7 @@ describe('SherpaOnnxStt', () => {
 
       const stt = new SherpaOnnxStt();
       await expect(stt.ensureModel()).rejects.toThrow('HTTP 503');
-      expect(mockUnlinkSync).toHaveBeenCalledWith(
-        '/tmp/user-data/sherpa-onnx-model/tokens.txt.tmp',
-      );
+      expect(mockUnlinkSync).toHaveBeenCalledWith(path.join(EXPECTED_MODEL_DIR, 'tokens.txt.tmp'));
     });
 
     it('rejects when request times out even if temp file was not created', async () => {
