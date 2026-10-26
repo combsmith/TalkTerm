@@ -924,7 +924,7 @@ describe('ConversationView', () => {
     expect(screen.getByText('Auth')).toBeInTheDocument();
     expect(screen.getByText(/# Specification/)).toBeInTheDocument();
 
-    // 3b. Standalone document response after tool-call replaces task-progress panel
+    // 3b. Standalone document response after tool-call replaces task-progress panel and survives subsequent complete event
     simulateAgentEvent({
       type: 'tool-call',
       toolName: 'Read',
@@ -937,7 +937,36 @@ describe('ConversationView', () => {
     act(() => {
       vi.advanceTimersByTime(600);
     });
+    simulateAgentEvent({ type: 'complete', summary: 'Done' });
     expect(screen.getByText(/# Architecture Overview/)).toBeInTheDocument();
+
+    // 3c. Comparison table flushed >600ms before complete is preserved on complete and restarts live mic when live mode is active
+    act(() => {
+      screen.getByRole('button', { name: /start recording/i }).click();
+    });
+    mockSttInstance.start.mockClear();
+    mockSttInstance.isListening = false;
+    simulateAgentEvent({
+      type: 'tool-call',
+      toolName: 'Read',
+      toolInput: { file_path: '/src/compare.ts' },
+    });
+    simulateAgentEvent({
+      type: 'text',
+      content: '| Option | Cost |\n| --- | --- |\n| Plan A | $10 |\n| Plan B | $20 |',
+    });
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    simulateAgentEvent({ type: 'complete', summary: 'Done' });
+    expect(screen.getByText('Plan A')).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(350);
+    });
+    expect(mockSttInstance.start).toHaveBeenCalled();
+    act(() => {
+      screen.getByRole('button', { name: /stop recording/i }).click();
+    });
 
     // 4. Consecutive progress events + error clearing active timers
     simulateAgentEvent({ type: 'text', content: 'Buffered text' });

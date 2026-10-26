@@ -561,10 +561,12 @@ export class ClaudeSdkBackend implements AgentBackend {
         if (event.type === 'tool-call' || event.type === 'progress') {
           hadToolActivity = true;
         }
+        const isBudgetExhausted = this.lastTurnError === 'error_max_budget_usd';
         if (
           event.type === 'error' &&
           attempt < maxRetries &&
           !hadToolActivity &&
+          !isBudgetExhausted &&
           !this.abortController.signal.aborted
         ) {
           // Swallow transient pre-tool error and retry; only drop resume context on confirmed resume failures
@@ -794,6 +796,7 @@ export class ClaudeSdkBackend implements AgentBackend {
       ];
     }
     if (msg.subtype === 'error_max_budget_usd') {
+      this.lastTurnError = 'error_max_budget_usd';
       return [
         {
           type: 'error',

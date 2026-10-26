@@ -297,6 +297,13 @@ describe('QuestionCardStack', () => {
     expect(screen.getByText('Mobile app')).toBeInTheDocument();
     expect(screen.getByText('PostgreSQL')).toBeInTheDocument();
     expect(screen.getByText('Next month')).toBeInTheDocument();
+
+    // Subsequent speech updates while on the review screen must not overwrite the last question's answer
+    rerender(
+      <QuestionCardStack {...defaultProps} spokenAnswer={{ text: 'Yes submit those', seq: 4 }} />,
+    );
+    expect(screen.getByText('Next month')).toBeInTheDocument();
+    expect(screen.queryByText('Yes submit those')).not.toBeInTheDocument();
   });
 
   it('clears the skipped flag when a suggestion chip is selected on a previously skipped question', async () => {

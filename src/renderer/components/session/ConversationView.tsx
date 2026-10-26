@@ -108,6 +108,8 @@ export function ConversationView({
   const lastMessageRef = useRef<string | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const displayMode = useDisplayMode();
+  const displayModeRef = useRef(displayMode.mode);
+  displayModeRef.current = displayMode.mode;
   const { isOnline } = useNetworkStatus();
   const taskStepsRef = useRef<TaskStep[]>([]);
   const toolStartTimeRef = useRef(new Map<string, number>());
@@ -130,6 +132,18 @@ export function ConversationView({
       restartListeningTimerRef.current = null;
     }
   }, []);
+
+  const scheduleLiveModeRestart = useCallback((): void => {
+    if (liveModeRef.current) {
+      clearRestartListeningTimer();
+      restartListeningTimerRef.current = setTimeout(() => {
+        restartListeningTimerRef.current = null;
+        if (liveModeRef.current) {
+          startListeningRef.current?.();
+        }
+      }, 300);
+    }
+  }, [clearRestartListeningTimer]);
 
   // Keep ref in sync with state for use in callbacks
   useEffect(() => {
@@ -210,11 +224,13 @@ export function ConversationView({
 
       // If preamble is long enough for a document, show it in DocumentView
       if (isDocumentContent(parsed.preamble)) {
+        displayModeRef.current = 'none';
         displayMode.clear();
         setActiveDocument(parsed.preamble);
         setAvatarState('ready');
         setCaption(null);
         setIsCaptionVisible(false);
+        scheduleLiveModeRestart();
       } else {
         setAvatarState(parsed.preamble !== '' ? 'speaking' : 'ready');
         setCaption(parsed.preamble !== '' ? parsed.preamble : null);
@@ -222,21 +238,27 @@ export function ConversationView({
         if (ttsRef.current !== null && parsed.preamble !== '') {
           ttsRef.current.onEnd = (): void => {
             setAvatarState('ready');
+            scheduleLiveModeRestart();
           };
           ttsRef.current.speak(parsed.preamble, voiceRef.current);
+        } else {
+          scheduleLiveModeRestart();
         }
       }
     } else {
       const contentType = detectContentType(text);
       if (contentType === 'document') {
         pendingTextRef.current = '';
+        displayModeRef.current = 'none';
         displayMode.clear();
         setActiveDocument(text);
         setAvatarState('ready');
         setCaption(null);
         setIsCaptionVisible(false);
+        scheduleLiveModeRestart();
       } else if (contentType === 'comparison-table') {
         pendingTextRef.current = '';
+        displayModeRef.current = 'comparison-table';
         displayMode.setContent({
           type: 'comparison-table',
           data: normalizeComparisonData(parseMarkdownTable(text)),
@@ -244,8 +266,10 @@ export function ConversationView({
         setAvatarState('ready');
         setCaption("Here's a comparison for you.");
         setIsCaptionVisible(true);
+        scheduleLiveModeRestart();
       } else if (contentType === 'plan') {
         pendingTextRef.current = '';
+        displayModeRef.current = 'plan-preview';
         displayMode.setContent({
           type: 'plan-preview',
           data: normalizePlanData(parsePlanContent(text)),
@@ -253,8 +277,10 @@ export function ConversationView({
         setAvatarState('ready');
         setCaption("Here's my proposed plan.");
         setIsCaptionVisible(true);
+        scheduleLiveModeRestart();
       } else if (contentType === 'clustered-cards') {
         pendingTextRef.current = '';
+        displayModeRef.current = 'clustered-cards';
         displayMode.setContent({
           type: 'clustered-cards',
           data: normalizeClusteredData(parseClusteredContent(text)),
@@ -262,6 +288,7 @@ export function ConversationView({
         setAvatarState('ready');
         setCaption("I've organized this into categories.");
         setIsCaptionVisible(true);
+        scheduleLiveModeRestart();
       } else {
         const content = pendingTextRef.current;
         pendingTextRef.current = '';
@@ -271,21 +298,13 @@ export function ConversationView({
         if (ttsRef.current !== null) {
           ttsRef.current.onEnd = (): void => {
             setAvatarState('ready');
-            if (liveModeRef.current) {
-              clearRestartListeningTimer();
-              restartListeningTimerRef.current = setTimeout(() => {
-                restartListeningTimerRef.current = null;
-                if (liveModeRef.current) {
-                  startListeningRef.current?.();
-                }
-              }, 300);
-            }
+            scheduleLiveModeRestart();
           };
           ttsRef.current.speak(content, voiceRef.current);
         }
       }
     }
-  }, [displayMode.setContent]); // eslint-disable-line react-hooks/exhaustive-deps -- setContent is stable (useCallback)
+  }, [displayMode.setContent, scheduleLiveModeRestart]); // eslint-disable-line react-hooks/exhaustive-deps -- setContent is stable (useCallback)
 
   // Subscribe to agent events from main process
   useEffect(() => {
@@ -325,6 +344,7 @@ export function ConversationView({
             { name: event.toolName, status: 'in-progress' as const },
           ];
           taskStepsRef.current = updatedSteps;
+          displayModeRef.current = 'task-progress';
           displayMode.setContent({
             type: 'task-progress',
             data: { steps: updatedSteps },
@@ -353,6 +373,7 @@ export function ConversationView({
             return s;
           });
           taskStepsRef.current = resultSteps;
+          displayModeRef.current = 'task-progress';
           displayMode.setContent({
             type: 'task-progress',
             data: { steps: resultSteps },
@@ -393,7 +414,7 @@ export function ConversationView({
             clearTimeout(progressTimerRef.current);
             progressTimerRef.current = null;
           }
-          if (taskStepsRef.current.length > 0) {
+          if (taskStepsRef.current.length > 0 && displayModeRef.current === 'task-progress') {
             const now = Date.now();
             const finalizedSteps = taskStepsRef.current.map((s): TaskStep => {
               if (s.status !== 'in-progress') return s;

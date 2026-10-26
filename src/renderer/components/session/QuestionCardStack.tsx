@@ -64,6 +64,9 @@ function reducer(state: CardStackState, action: CardStackAction): CardStackState
       return { ...state, answers: newAnswers, skipped: newSkipped };
     }
     case 'answer-and-advance': {
+      if (state.showReview) {
+        return state;
+      }
       const newAnswers = [...state.answers];
       newAnswers[state.currentIndex] = action.text;
       const newSkipped = [...state.skipped];

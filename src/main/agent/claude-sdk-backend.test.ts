@@ -1410,6 +1410,27 @@ describe('ClaudeSdkBackend', () => {
       const approvedCall = sdkMock.query.mock.calls[1] as [{ options: { permissionMode: string } }];
       expect(approvedCall[0].options.permissionMode).toBe('acceptEdits');
     });
+
+    it('does not retry on error_max_budget_usd', async () => {
+      const sdkMock = mockSdkModule([
+        {
+          type: 'result',
+          subtype: 'error_max_budget_usd',
+          session_id: 'sess-budget',
+        },
+      ]);
+      installSdkMock(sdkMock);
+
+      const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
+      const events = await collectEvents(backend.sendMessage('sess-budget', 'expensive query'));
+
+      expect(sdkMock.query).toHaveBeenCalledTimes(1);
+      expect(events).toHaveLength(1);
+      expect(events[0]?.type).toBe('error');
+      if (events[0]?.type === 'error') {
+        expect(events[0].userMessage).toContain('exceeded the cost budget');
+      }
+    });
   });
 
   describe('conversation history tracking', () => {
