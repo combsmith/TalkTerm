@@ -22,7 +22,12 @@ import { CaptionBar } from '../avatar/CaptionBar';
 import { StatusIndicator } from '../avatar/StatusIndicator';
 import { TextInput } from '../avatar/TextInput';
 import { DocumentView } from '../display/DocumentView';
-import { OutputPanel } from '../display/OutputPanel';
+import {
+  OutputPanel,
+  normalizeClusteredData,
+  normalizeComparisonData,
+  normalizePlanData,
+} from '../display/OutputPanel';
 import type { TaskStep } from '../display/TaskProgress';
 import { friendlyToolName } from '../display/TaskProgress';
 import type { ActionCardData } from '../overlay/ActionCard';
@@ -85,6 +90,12 @@ export function ConversationView({
   const [sttSupported, setSttSupported] = useState(true);
   const [liveMode, setLiveMode] = useState(false);
   const [activeQuestionSet, setActiveQuestionSet] = useState<QuestionSet | null>(null);
+  const [spokenQuestionAnswer, setSpokenQuestionAnswer] = useState<{
+    text: string;
+    seq: number;
+  } | null>(null);
+  const activeQuestionSetRef = useRef<QuestionSet | null>(null);
+  activeQuestionSetRef.current = activeQuestionSet;
   const [activeDocument, setActiveDocument] = useState<string | null>(null);
   const [activeError, setActiveError] = useState<{
     userMessage: string;
@@ -148,10 +159,21 @@ export function ConversationView({
       if (stt !== null && !stt.isListening) {
         stt.onResult = (result): void => {
           if (result.isFinal && result.transcript.trim() !== '') {
+            const text = result.transcript.trim();
             // Voice barge-in: stop TTS and process the new input
             ttsRef.current?.stop();
             pendingTextRef.current = '';
-            handleSendInternal(result.transcript.trim());
+            if (
+              activeQuestionSetRef.current !== null &&
+              activeQuestionSetRef.current.kind !== 'menu'
+            ) {
+              setSpokenQuestionAnswer((prev) => ({
+                text,
+                seq: (prev?.seq ?? 0) + 1,
+              }));
+              return;
+            }
+            handleSendInternal(text);
           }
         };
         stt.start();
@@ -205,7 +227,7 @@ export function ConversationView({
         pendingTextRef.current = '';
         displayMode.setContent({
           type: 'comparison-table',
-          data: parseMarkdownTable(text),
+          data: normalizeComparisonData(parseMarkdownTable(text)),
         });
         setAvatarState('ready');
         setCaption("Here's a comparison for you.");
@@ -214,7 +236,7 @@ export function ConversationView({
         pendingTextRef.current = '';
         displayMode.setContent({
           type: 'plan-preview',
-          data: parsePlanContent(text),
+          data: normalizePlanData(parsePlanContent(text)),
         });
         setAvatarState('ready');
         setCaption("Here's my proposed plan.");
@@ -223,7 +245,7 @@ export function ConversationView({
         pendingTextRef.current = '';
         displayMode.setContent({
           type: 'clustered-cards',
-          data: parseClusteredContent(text),
+          data: normalizeClusteredData(parseClusteredContent(text)),
         });
         setAvatarState('ready');
         setCaption("I've organized this into categories.");
@@ -355,6 +377,23 @@ export function ConversationView({
             clearTimeout(progressTimerRef.current);
             progressTimerRef.current = null;
           }
+          if (taskStepsRef.current.length > 0) {
+            const now = Date.now();
+            const finalizedSteps = taskStepsRef.current.map((s): TaskStep => {
+              if (s.status !== 'in-progress') return s;
+              const startTime = toolStartTimeRef.current.get(s.name);
+              const elapsed = startTime !== undefined ? now - startTime : undefined;
+              return {
+                name: s.name,
+                status: 'completed',
+                ...(elapsed !== undefined ? { elapsedMs: elapsed } : {}),
+              };
+            });
+            displayMode.setContent({
+              type: 'task-progress',
+              data: { steps: finalizedSteps },
+            });
+          }
           flushPendingText();
           setAvatarState((prev) => (prev === 'speaking' ? prev : 'ready'));
           // Clear task progress tracking for next turn
@@ -362,6 +401,27 @@ export function ConversationView({
           toolStartTimeRef.current.clear();
           break;
         case 'progress':
+          if (
+            (event.status === 'completed' || event.status === 'failed') &&
+            taskStepsRef.current.some((s) => s.status === 'in-progress')
+          ) {
+            const now = Date.now();
+            const updatedSteps = taskStepsRef.current.map((s): TaskStep => {
+              if (s.status !== 'in-progress') return s;
+              const startTime = toolStartTimeRef.current.get(s.name);
+              const elapsed = startTime !== undefined ? now - startTime : undefined;
+              return {
+                name: s.name,
+                status: event.status,
+                ...(elapsed !== undefined ? { elapsedMs: elapsed } : {}),
+              };
+            });
+            taskStepsRef.current = updatedSteps;
+            displayMode.setContent({
+              type: 'task-progress',
+              data: { steps: updatedSteps },
+            });
+          }
           // Debounce progress captions — avoids flicker when rate_limit_event is immediately
           // followed by result:success (which happens on nearly every SDK turn per logs)
           if (progressTimerRef.current !== null) {
@@ -421,6 +481,16 @@ export function ConversationView({
           setInputValue('');
           setCaption(null);
           setIsCaptionVisible(false);
+          if (
+            activeQuestionSetRef.current !== null &&
+            activeQuestionSetRef.current.kind !== 'menu'
+          ) {
+            setSpokenQuestionAnswer((prev) => ({
+              text,
+              seq: (prev?.seq ?? 0) + 1,
+            }));
+            return;
+          }
           handleSendInternal(text);
         }
       } else {
@@ -698,6 +768,7 @@ export function ConversationView({
               avatarName={avatarName}
               onSubmit={handleQuestionSubmit}
               onDismiss={handleQuestionDismiss}
+              spokenAnswer={spokenQuestionAnswer}
             />
           )}
         </div>

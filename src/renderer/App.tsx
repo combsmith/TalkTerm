@@ -24,6 +24,7 @@ export function App(): ReactElement | null {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [workspacePath, setWorkspacePath] = useState('');
+  const [envKeyDetected, setEnvKeyDetected] = useState(false);
   const [adminResult, setAdminResult] = useState<AdminCheckResult | null>(null);
   const [incompleteSessions, setIncompleteSessions] = useState<
     Array<{ id: string; workspacePath: string; updatedAt: string }>
@@ -55,10 +56,27 @@ export function App(): ReactElement | null {
   useEffect(() => {
     if (phase === 'admin-check' && adminResult?.isAdmin === true) {
       setPhase('setup');
-      void Promise.all([window.electronAPI.assessLaunchState(), window.electronAPI.getProfile()])
-        .then(([launchState, profile]) => {
+      const getWorkspacePromise =
+        typeof window.electronAPI.getWorkspace === 'function'
+          ? window.electronAPI.getWorkspace()
+          : Promise.resolve(null);
+      void Promise.all([
+        window.electronAPI.assessLaunchState(),
+        window.electronAPI.getProfile(),
+        getWorkspacePromise,
+      ])
+        .then(([launchState, profile, savedWorkspace]) => {
           if (profile !== null && profile.name !== '') {
             setUserName(profile.name);
+          }
+          if (launchState.envKeyDetected === true) {
+            setEnvKeyDetected(true);
+          }
+          const resolvedWorkspace =
+            savedWorkspace ??
+            (typeof launchState.workspacePath === 'string' ? launchState.workspacePath : '');
+          if (resolvedWorkspace !== '') {
+            setWorkspacePath(resolvedWorkspace);
           }
           const firstStep = determineFirstIncompleteStep(launchState);
           goToStep(firstStep);
@@ -144,11 +162,11 @@ export function App(): ReactElement | null {
     if (currentStep === 'needs-key') {
       return (
         <ApiKeySetup
+          detectedEnvKey={envKeyDetected}
           onValidated={(key: string) => {
-            void Promise.all([
-              window.electronAPI.storeApiKey(key),
-              window.electronAPI.setAuthMode('api-key'),
-            ])
+            const storePromise =
+              key === 'ENV_KEY' ? Promise.resolve() : window.electronAPI.storeApiKey(key);
+            void Promise.all([storePromise, window.electronAPI.setAuthMode('api-key')])
               .then(() => {
                 completeCurrentStep();
               })

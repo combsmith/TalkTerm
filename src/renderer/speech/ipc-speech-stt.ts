@@ -49,7 +49,14 @@ export class IpcSpeechStt implements SpeechToText {
   }
 
   stop(): void {
-    if (!this._isListening && this.audioContext === null && this.mediaStream === null) return;
+    if (
+      !this._isListening &&
+      this.audioContext === null &&
+      this.mediaStream === null &&
+      this.unsubResult === null
+    ) {
+      return;
+    }
     this._isListening = false;
     this.teardownCapture();
 
@@ -148,6 +155,7 @@ export class IpcSpeechStt implements SpeechToText {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[IpcSpeechStt] Failed to start audio capture:', msg);
       this._isListening = false;
+      this.teardownCapture();
       this.onError?.(new Error(`Microphone access failed: ${msg}`));
     }
   }

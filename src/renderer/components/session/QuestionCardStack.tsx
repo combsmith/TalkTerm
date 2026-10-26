@@ -8,6 +8,7 @@ interface QuestionCardStackProps {
   avatarName: string;
   onSubmit: (aggregatedMessage: string) => void;
   onDismiss: () => void;
+  spokenAnswer?: { text: string; seq: number } | null | undefined;
 }
 
 // --- Reducer ---
@@ -26,6 +27,7 @@ type CardStackAction =
   | { type: 'back' }
   | { type: 'skip'; total: number }
   | { type: 'set-answer'; index: number; text: string }
+  | { type: 'answer-and-advance'; text: string; total: number }
   | { type: 'toggle-chip'; questionIndex: number; chip: string }
   | { type: 'show-review' }
   | { type: 'edit-from-review'; index: number }
@@ -60,6 +62,20 @@ function reducer(state: CardStackState, action: CardStackAction): CardStackState
       const newSkipped = [...state.skipped];
       newSkipped[action.index] = false;
       return { ...state, answers: newAnswers, skipped: newSkipped };
+    }
+    case 'answer-and-advance': {
+      const newAnswers = [...state.answers];
+      newAnswers[state.currentIndex] = action.text;
+      const newSkipped = [...state.skipped];
+      newSkipped[state.currentIndex] = false;
+      const isLastQuestion = state.currentIndex >= action.total - 1;
+      return {
+        ...state,
+        answers: newAnswers,
+        skipped: newSkipped,
+        currentIndex: isLastQuestion ? state.currentIndex : state.currentIndex + 1,
+        showReview: isLastQuestion ? true : state.showReview,
+      };
     }
     case 'toggle-chip': {
       const newChips = state.selectedChips.map((chips) => [...chips]);
@@ -103,10 +119,12 @@ export function QuestionCardStack({
   avatarName,
   onSubmit,
   onDismiss,
+  spokenAnswer,
 }: QuestionCardStackProps): ReactElement {
   const total = questionSet.questions.length;
   const [state, dispatch] = useReducer(reducer, total, createInitialState);
   const prevQuestionSetRef = useRef(questionSet);
+  const lastSpokenSeqRef = useRef(0);
 
   useEffect(() => {
     if (prevQuestionSetRef.current !== questionSet) {
@@ -114,6 +132,21 @@ export function QuestionCardStack({
       dispatch({ type: 'reset', total: questionSet.questions.length });
     }
   }, [questionSet]);
+
+  useEffect(() => {
+    if (
+      spokenAnswer !== undefined &&
+      spokenAnswer !== null &&
+      spokenAnswer.seq !== lastSpokenSeqRef.current
+    ) {
+      lastSpokenSeqRef.current = spokenAnswer.seq;
+      dispatch({
+        type: 'answer-and-advance',
+        text: spokenAnswer.text,
+        total: questionSet.questions.length,
+      });
+    }
+  }, [spokenAnswer, questionSet.questions.length]);
 
   const currentQuestion = questionSet.questions[state.currentIndex];
   if (currentQuestion === undefined) {

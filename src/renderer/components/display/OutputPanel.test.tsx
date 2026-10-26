@@ -83,4 +83,58 @@ describe('OutputPanel', () => {
     render(<OutputPanel mode="plan-preview" data={{}} onClose={vi.fn()} />);
     expect(screen.getByText('Preview')).toBeInTheDocument();
   });
+
+  it('renders parsed markdown table data in comparison-table mode', () => {
+    const parsedTable = {
+      headers: ['Option', 'Speed', 'Ease'],
+      rows: [
+        ['Vite', '5', 'Easy'],
+        ['Webpack', '3', 'Complex'],
+      ],
+    };
+    render(<OutputPanel mode="comparison-table" data={parsedTable} onClose={vi.fn()} />);
+    expect(screen.getByText('Comparison')).toBeInTheDocument();
+    expect(screen.getByText('Vite')).toBeInTheDocument();
+    expect(screen.getByText('Webpack')).toBeInTheDocument();
+  });
+
+  it('renders parsed clustered groups in clustered-cards mode', () => {
+    const parsedClusters = [{ heading: 'Frontend', items: ['React', 'Tailwind'] }];
+    render(<OutputPanel mode="clustered-cards" data={parsedClusters} onClose={vi.fn()} />);
+    expect(screen.getByText('Ideas')).toBeInTheDocument();
+    expect(screen.getByText('Frontend')).toBeInTheDocument();
+  });
+
+  it('renders parsed plan steps in plan-preview mode', () => {
+    const parsedPlan = [
+      { title: 'Step one', description: 'Small scope', done: false },
+      { title: 'Step two', description: '', done: true },
+      { title: 'Step three', description: '', done: false },
+    ];
+    render(<OutputPanel mode="plan-preview" data={parsedPlan} onClose={vi.fn()} />);
+    expect(screen.getByText('Preview')).toBeInTheDocument();
+    expect(screen.getByText('Step one')).toBeInTheDocument();
+    expect(screen.getByText('Small scope')).toBeInTheDocument();
+    expect(screen.getByText('Step two')).toBeInTheDocument();
+    expect(screen.getByText('Completed')).toBeInTheDocument();
+    expect(screen.getByText('Planned')).toBeInTheDocument();
+  });
+
+  it('handles pre-normalized plan data and empty fallback payloads', () => {
+    render(
+      <OutputPanel
+        mode="plan-preview"
+        data={{
+          approach: 'Custom approach',
+          steps: [{ number: 1, description: 'Init', estimatedScope: '1h' }],
+        }}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Custom approach')).toBeInTheDocument();
+    expect(screen.getByText('Init')).toBeInTheDocument();
+
+    render(<OutputPanel mode="comparison-table" data={{}} onClose={vi.fn()} />);
+    render(<OutputPanel mode="clustered-cards" data={{}} onClose={vi.fn()} />);
+  });
 });

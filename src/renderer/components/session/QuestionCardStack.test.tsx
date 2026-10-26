@@ -281,4 +281,21 @@ describe('QuestionCardStack', () => {
     expect(screen.getByText('Deployment')).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/your answer/i)).toHaveValue('');
   });
+
+  it('populates answers and advances through questions to review when spokenAnswer updates', () => {
+    const { rerender } = render(<QuestionCardStack {...defaultProps} spokenAnswer={null} />);
+    expect(screen.getByTestId('question-progress')).toHaveTextContent('1 of 3');
+
+    rerender(<QuestionCardStack {...defaultProps} spokenAnswer={{ text: 'Mobile app', seq: 1 }} />);
+    expect(screen.getByTestId('question-progress')).toHaveTextContent('2 of 3');
+
+    rerender(<QuestionCardStack {...defaultProps} spokenAnswer={{ text: 'PostgreSQL', seq: 2 }} />);
+    expect(screen.getByTestId('question-progress')).toHaveTextContent('3 of 3');
+
+    rerender(<QuestionCardStack {...defaultProps} spokenAnswer={{ text: 'Next month', seq: 3 }} />);
+    // Should now be on review screen with all 3 answers
+    expect(screen.getByText('Mobile app')).toBeInTheDocument();
+    expect(screen.getByText('PostgreSQL')).toBeInTheDocument();
+    expect(screen.getByText('Next month')).toBeInTheDocument();
+  });
 });

@@ -14,6 +14,8 @@ export interface WebContents {
 }
 
 export class AgentIPCHandler implements IPCRegistrar {
+  private readonly sessionQueues = new Map<string, Promise<void>>();
+
   constructor(
     private readonly router: AgentMessageRouter,
     private readonly getWebContents: () => WebContents | null,
@@ -40,18 +42,29 @@ export class AgentIPCHandler implements IPCRegistrar {
         const validSessionId = validateString(sessionId, 'sessionId');
         const validMessage = validateString(message, 'message');
 
+        const previous = this.sessionQueues.get(validSessionId) ?? Promise.resolve();
+        const current = previous.then(async () => {
+          try {
+            const session = this.sessionRepo?.findById(validSessionId);
+            const workspacePath = session?.workspacePath;
+            await this.router.sendMessage(validSessionId, validMessage, workspacePath);
+          } catch (err: unknown) {
+            console.error('[AgentIPC] Error handling agent action:', err);
+            const category = classifyError(err);
+            webContents.send(IPC_CHANNELS.AGENT_MESSAGE, {
+              type: 'error',
+              userMessage: createUserFriendlyMessage(category),
+              recoveryOptions: recoveryOptionsForCategory(category),
+            });
+          }
+        });
+        this.sessionQueues.set(validSessionId, current);
         try {
-          const session = this.sessionRepo?.findById(validSessionId);
-          const workspacePath = session?.workspacePath;
-          await this.router.sendMessage(validSessionId, validMessage, workspacePath);
-        } catch (err: unknown) {
-          console.error('[AgentIPC] Error handling agent action:', err);
-          const category = classifyError(err);
-          webContents.send(IPC_CHANNELS.AGENT_MESSAGE, {
-            type: 'error',
-            userMessage: createUserFriendlyMessage(category),
-            recoveryOptions: recoveryOptionsForCategory(category),
-          });
+          await current;
+        } finally {
+          if (this.sessionQueues.get(validSessionId) === current) {
+            this.sessionQueues.delete(validSessionId);
+          }
         }
       },
     );

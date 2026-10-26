@@ -722,6 +722,63 @@ describe('ConversationView', () => {
 
     simulateTextAndFlush('- [x] Set up project\n- [ ] Write tests\n- [ ] Deploy to production');
     expect(screen.getByText(/Here's my proposed plan/i)).toBeInTheDocument();
+    expect(screen.getByText('Set up project')).toBeInTheDocument();
+    expect(screen.getByText('Write tests')).toBeInTheDocument();
+  });
+
+  it('routes comparison table and clustered cards content to OutputPanel', () => {
+    render(<ConversationView userName="DJ" avatarName="Mary" sessionId="s1" />);
+
+    simulateTextAndFlush(
+      '| Framework | Speed | DX |\n| --- | --- | --- |\n| Vite | 5 | 5 |\n| Webpack | 3 | 3 |',
+    );
+    expect(screen.getByText(/Here's a comparison for you/i)).toBeInTheDocument();
+    expect(screen.getByText('Vite')).toBeInTheDocument();
+
+    simulateTextAndFlush('**Frontend**\n- React\n- Tailwind\n**Backend**\n- Node.js\n- SQLite');
+    expect(screen.getByText(/organized this into categories/i)).toBeInTheDocument();
+    expect(screen.getByText('Frontend')).toBeInTheDocument();
+  });
+
+  it('routes spoken STT answers through QuestionCardStack instead of sending immediately', () => {
+    render(<ConversationView userName="DJ" avatarName="Mary" sessionId="s1" />);
+
+    simulateTextAndFlush(
+      'Two questions:\n1. **Platform** — Which platform?\n2. **Timeline** — When do you need it?',
+    );
+    expect(screen.getByTestId('question-progress')).toHaveTextContent('1 of 2');
+
+    // Start mic and speak first answer
+    act(() => {
+      screen.getByRole('button', { name: /start recording/i }).click();
+    });
+    act(() => {
+      mockSttInstance.onResult?.({ transcript: 'iOS and Android', isFinal: true });
+    });
+
+    // Should advance to question 2 without sending to agent
+    expect(mockSendAgentMessage).not.toHaveBeenCalled();
+    expect(screen.getByTestId('question-progress')).toHaveTextContent('2 of 2');
+
+    // Speak second answer -> transitions to review screen
+    act(() => {
+      mockSttInstance.onResult?.({ transcript: 'Q3 2026', isFinal: true });
+    });
+    expect(mockSendAgentMessage).not.toHaveBeenCalled();
+    expect(screen.getByText('iOS and Android')).toBeInTheDocument();
+    expect(screen.getByText('Q3 2026')).toBeInTheDocument();
+  });
+
+  it('finalizes displayed tool progress steps when completed progress or complete event arrives', () => {
+    render(<ConversationView userName="DJ" avatarName="Mary" sessionId="s1" />);
+    simulateAgentEvent({ type: 'tool-call', toolName: 'Read', toolInput: { file_path: 'a.ts' } });
+    simulateAgentEvent({ type: 'progress', step: 'Read 1 file', status: 'completed' });
+    expect(screen.getByText('✓')).toBeInTheDocument();
+
+    // Another tool call followed directly by complete event
+    simulateAgentEvent({ type: 'tool-call', toolName: 'Grep', toolInput: { pattern: 'foo' } });
+    simulateAgentEvent({ type: 'complete', summary: 'Done' });
+    expect(screen.getAllByText('✓')).toHaveLength(2);
   });
 
   it('handles STT interim results, errors, and onEnd callback', () => {
@@ -873,7 +930,7 @@ describe('ConversationView', () => {
     simulateAgentEvent({ type: 'progress', step: 'Step 3', status: 'in-progress' });
     simulateAgentEvent({ type: 'complete', summary: 'Done' });
 
-    // 6. Voice barge-in during live mode speaking
+    // 6. Voice barge-in during live mode speaking (first with question stack open, then closed)
     act(() => {
       screen.getByRole('button', { name: /start recording/i }).click();
     });
@@ -881,6 +938,13 @@ describe('ConversationView', () => {
     simulateAgentEvent({ type: 'text', content: 'Speaking now' });
     act(() => {
       vi.advanceTimersByTime(600);
+    });
+    act(() => {
+      mockSttInstance.onResult?.({ transcript: 'OAuth', isFinal: true });
+    });
+    expect(screen.getByTestId('question-progress')).toHaveTextContent('2 of 2');
+    act(() => {
+      screen.getByRole('button', { name: /close questions/i }).click();
     });
     act(() => {
       mockSttInstance.onResult?.({ transcript: 'barge in message', isFinal: true });

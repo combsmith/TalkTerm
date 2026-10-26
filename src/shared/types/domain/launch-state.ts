@@ -7,9 +7,11 @@ export type SetupStep =
 
 export interface LaunchState {
   apiKeyValid: boolean;
+  envKeyDetected?: boolean;
   profileComplete: boolean;
   avatarSelected: boolean;
   workspaceSelected: boolean;
+  workspacePath?: string;
 }
 
 export function determineFirstIncompleteStep(state: LaunchState): SetupStep {

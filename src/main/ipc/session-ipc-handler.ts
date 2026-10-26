@@ -8,6 +8,7 @@ import { validateString } from './validate-string';
 
 export interface SessionStarter {
   startSession(config: { workspacePath: string; apiKey: string }): Promise<void>;
+  resumeSession?(sessionId: string): Promise<void>;
 }
 
 export class SessionIPCHandler implements IPCRegistrar {
@@ -33,9 +34,17 @@ export class SessionIPCHandler implements IPCRegistrar {
       const session = createSession(validPath, avatarId);
       this.sessionRepo.save(session);
       if (this.agentRouter !== undefined) {
+        const storedKey = this.keyManager?.retrieveKey() ?? null;
+        const envKey = process.env['ANTHROPIC_API_KEY'];
+        const apiKey =
+          storedKey !== null && storedKey !== ''
+            ? storedKey
+            : envKey !== undefined && envKey !== ''
+              ? envKey
+              : '';
         void this.agentRouter.startSession({
           workspacePath: validPath,
-          apiKey: this.keyManager?.retrieveKey() ?? '',
+          apiKey,
         });
       }
       return session.id;
@@ -48,6 +57,9 @@ export class SessionIPCHandler implements IPCRegistrar {
         throw new Error(`Session not found: ${validSessionId}`);
       }
       this.sessionRepo.updateStatus(session.id, 'active');
+      if (this.agentRouter?.resumeSession !== undefined) {
+        void this.agentRouter.resumeSession(session.id);
+      }
       return session;
     });
 
@@ -60,6 +72,7 @@ export class SessionIPCHandler implements IPCRegistrar {
       const hasEnvKey = apiKeyEnv !== undefined && apiKeyEnv !== '';
       const hasStoredKey = this.keyManager?.hasKey() === true;
       const isSubscription = this.configStore.get('authMode') === 'claude-subscription';
+      const workspacePath = this.configStore.get('workspacePath');
       return {
         apiKeyValid: hasEnvKey || hasStoredKey || isSubscription,
         envKeyDetected: hasEnvKey,
@@ -69,6 +82,7 @@ export class SessionIPCHandler implements IPCRegistrar {
           profile.avatarPersonaId !== null &&
           profile.avatarPersonaId !== '',
         workspaceSelected: this.configStore.has('workspacePath'),
+        ...(typeof workspacePath === 'string' && workspacePath !== '' ? { workspacePath } : {}),
       };
     });
   }

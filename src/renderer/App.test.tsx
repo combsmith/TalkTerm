@@ -247,6 +247,7 @@ describe('App', () => {
       profileComplete: true,
       avatarSelected: true,
       workspaceSelected: true,
+      workspacePath: '/saved/workspace',
     });
     vi.mocked(window.electronAPI.getProfile).mockResolvedValue({
       name: 'ReturningAlice',
@@ -259,5 +260,6 @@ describe('App', () => {
     passAdminCheck();
 
     expect(await screen.findByText(/Hey ReturningAlice/i)).toBeInTheDocument();
+    expect(window.electronAPI.getIncompleteSessions).toHaveBeenCalledWith('/saved/workspace');
   });
 });

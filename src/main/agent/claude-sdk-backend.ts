@@ -38,6 +38,8 @@ interface SdkQueryOptions {
   persistSession?: boolean | undefined;
   /** Continue the most recent conversation in the current directory. */
   continue?: boolean | undefined;
+  /** Resume a specific SDK conversation by session ID. */
+  resume?: string | undefined;
   env?: Record<string, string | undefined> | undefined;
   forceLoginMethod?: 'claudeai' | 'console' | undefined;
   promptSuggestions?: boolean | undefined;
@@ -156,6 +158,7 @@ export class ClaudeSdkBackend implements AgentBackend {
   private abortController: AbortController | null = null;
   private activeQuery: SdkQuery | null = null;
   private readonly sessionHistory = new Map<string, ConversationTurn[]>();
+  private readonly sdkSessionIds = new Map<string, string>();
 
   constructor(
     private readonly auditRepo: AuditRepository,
@@ -163,6 +166,8 @@ export class ClaudeSdkBackend implements AgentBackend {
     private readonly getAuthMode: () => AuthMode = () => 'api-key',
     private readonly getUserName: () => string = () => 'User',
     private readonly getMemoryContext: () => string | null = () => null,
+    private readonly onSdkSessionId?: (sessionId: string, sdkSessionId: string) => void,
+    private readonly getSdkSessionId?: (sessionId: string) => string | null,
   ) {}
 
   async *startSession(config: AgentSessionConfig): AsyncIterable<AgentEvent> {
@@ -253,6 +258,16 @@ export class ClaudeSdkBackend implements AgentBackend {
 
   // eslint-disable-next-line @typescript-eslint/require-await -- will be async when resume uses SDK
   async *resumeSession(sessionId: string): AsyncIterable<AgentEvent> {
+    const persistedSdkId =
+      this.sdkSessionIds.get(sessionId) ?? this.getSdkSessionId?.(sessionId) ?? null;
+    if (persistedSdkId !== null) {
+      this.sdkSessionIds.set(sessionId, persistedSdkId);
+      if (!this.sessionHistory.has(sessionId)) {
+        this.sessionHistory.set(sessionId, [
+          { role: 'assistant', content: 'Resumed previous session.' },
+        ]);
+      }
+    }
     const history = this.sessionHistory.get(sessionId);
     const turnCount = history?.length ?? 0;
     yield {
@@ -476,8 +491,13 @@ export class ClaudeSdkBackend implements AgentBackend {
   ): AsyncIterable<AgentEvent> {
     const maxRetries = 3;
     const bmadContext = await this.loadBmadContext(workspacePath);
+    const persistedSdkId =
+      this.sdkSessionIds.get(sessionId) ?? this.getSdkSessionId?.(sessionId) ?? null;
+    if (persistedSdkId !== null) {
+      this.sdkSessionIds.set(sessionId, persistedSdkId);
+    }
     const history = this.sessionHistory.get(sessionId);
-    const hasPriorTurns = history !== undefined && history.length > 1;
+    const hasPriorTurns = (history !== undefined && history.length > 1) || persistedSdkId !== null;
     const isApproved = message.trim().toLowerCase() === 'approved';
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -492,6 +512,7 @@ export class ClaudeSdkBackend implements AgentBackend {
           maxTurns: 25,
           maxBudgetUsd: 1.0,
           continue: useContinue,
+          ...(persistedSdkId !== null && attempt === 0 ? { resume: persistedSdkId } : {}),
           ...(isApproved ? { permissionMode: 'acceptEdits', allowedTools: undefined } : {}),
         },
         bmadContext,
@@ -516,7 +537,12 @@ export class ClaudeSdkBackend implements AgentBackend {
         if (event.type === 'tool-call' || event.type === 'progress') {
           hadToolActivity = true;
         }
-        if (event.type === 'error' && attempt < maxRetries && !hadToolActivity) {
+        if (
+          event.type === 'error' &&
+          attempt < maxRetries &&
+          !hadToolActivity &&
+          !this.abortController.signal.aborted
+        ) {
           // Swallow transient pre-tool error and retry
           hadError = true;
           console.warn(
@@ -534,7 +560,7 @@ export class ClaudeSdkBackend implements AgentBackend {
       }
 
       this.activeQuery = null;
-      if (!hadError) {
+      if (!hadError || this.abortController.signal.aborted) {
         return;
       }
     }
@@ -555,6 +581,16 @@ export class ClaudeSdkBackend implements AgentBackend {
           return;
         }
 
+        if (
+          typeof msg.session_id === 'string' &&
+          msg.session_id !== '' &&
+          sessionId !== 'session-init' &&
+          this.sdkSessionIds.get(sessionId) !== msg.session_id
+        ) {
+          this.sdkSessionIds.set(sessionId, msg.session_id);
+          this.onSdkSessionId?.(sessionId, msg.session_id);
+        }
+
         const subtype = (msg as { subtype?: string }).subtype;
         const msgType = subtype !== undefined ? `${msg.type}:${subtype}` : msg.type;
         this.debugLog(`[SDK Debug] ← ${msgType}`, { type: msg.type, session_id: msg.session_id });
@@ -565,6 +601,10 @@ export class ClaudeSdkBackend implements AgentBackend {
         }
       }
     } catch (err: unknown) {
+      if (this.abortController?.signal.aborted === true) {
+        yield { type: 'complete', summary: 'Cancelled by user' };
+        return;
+      }
       console.error('[ClaudeSdkBackend] SDK error:', err instanceof Error ? err.message : err);
       const category = classifyError(err);
       yield {

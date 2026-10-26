@@ -153,7 +153,14 @@ function bootstrap(): void {
   // 4. Agent backend
   const agentBackend = new ClaudeSdkBackend(
     auditRepo,
-    () => keyManager.retrieveKey(),
+    () => {
+      const stored = keyManager.retrieveKey();
+      if (stored !== null && stored !== '') {
+        return stored;
+      }
+      const envKey = process.env['ANTHROPIC_API_KEY'];
+      return envKey !== undefined && envKey !== '' ? envKey : null;
+    },
     (): AuthMode => {
       const mode = configStore.get('authMode');
       return mode === 'claude-subscription' ? 'claude-subscription' : 'api-key';
@@ -165,6 +172,12 @@ function bootstrap(): void {
     (): string | null => {
       const entries = memoryStore.findRecent(20);
       return entries.length > 0 ? entries.map((e) => `${e.key}: ${e.value}`).join('\n') : null;
+    },
+    (sessionId: string, sdkSessionId: string): void => {
+      sessionRepo.updateSdkSessionId(sessionId, sdkSessionId);
+    },
+    (sessionId: string): string | null => {
+      return sessionRepo.findById(sessionId)?.sdkSessionId ?? null;
     },
   );
   const agentRouter = new AgentMessageRouter(agentBackend);

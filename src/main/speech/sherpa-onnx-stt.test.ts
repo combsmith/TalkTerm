@@ -341,5 +341,23 @@ describe('SherpaOnnxStt', () => {
       expect(onError).toHaveBeenCalledWith('Speech processing error: decode crash');
       expect(stt.isListening).toBe(false);
     });
+
+    it('shares in-flight initialize() promise across concurrent calls', async () => {
+      const createRecognizer = vi.fn(() => ({
+        createStream: vi.fn(),
+        isReady: vi.fn(),
+        decode: vi.fn(),
+        isEndpoint: vi.fn(),
+        getResult: vi.fn(),
+        reset: vi.fn(),
+      }));
+      const stt = new SherpaOnnxStt({ createRecognizer });
+      const ensureSpy = vi.spyOn(stt, 'ensureModel');
+
+      await Promise.all([stt.initialize(), stt.initialize()]);
+
+      expect(ensureSpy).toHaveBeenCalledTimes(1);
+      expect(createRecognizer).toHaveBeenCalledTimes(1);
+    });
   });
 });

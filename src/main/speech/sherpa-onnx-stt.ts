@@ -51,6 +51,7 @@ export class SherpaOnnxStt {
   private _isListening = false;
   private lastText = '';
   private decodeTimer: ReturnType<typeof setInterval> | null = null;
+  private initPromise: Promise<void> | null = null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private readonly createRecognizerFn: (config: any) => any;
 
@@ -103,7 +104,17 @@ export class SherpaOnnxStt {
   /** Initialize the recognizer. Must be called before start(). */
   async initialize(): Promise<void> {
     if (this.recognizer !== null) return;
+    if (this.initPromise !== null) {
+      return this.initPromise;
+    }
 
+    this.initPromise = this.performInitialize().finally(() => {
+      this.initPromise = null;
+    });
+    return this.initPromise;
+  }
+
+  private async performInitialize(): Promise<void> {
     const modelDir = await this.ensureModel();
 
     const config = {

@@ -237,5 +237,8 @@ describe('IpcSpeechStt', () => {
       );
     });
     expect(stt.isListening).toBe(false);
+    expect(unsubResult).toHaveBeenCalledTimes(1);
+    expect(unsubError).toHaveBeenCalledTimes(1);
+    expect(unsubEnd).toHaveBeenCalledTimes(1);
   });
 });

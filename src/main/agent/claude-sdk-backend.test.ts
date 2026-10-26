@@ -414,6 +414,30 @@ describe('ClaudeSdkBackend', () => {
         backend.cancelCurrentAction();
       }).not.toThrow();
     });
+
+    it('terminates turn without retrying when cancelled and SDK stream throws', async () => {
+      let backendRef: ClaudeSdkBackend | null = null;
+      const querySpy = vi.fn().mockImplementation(() => {
+        // eslint-disable-next-line @typescript-eslint/require-await -- cancels and throws
+        async function* gen(): AsyncGenerator<Record<string, unknown>, void> {
+          backendRef?.cancelCurrentAction();
+          throw new Error('Request aborted by user');
+        }
+        const g = gen() as AsyncGenerator<Record<string, unknown>, void> & {
+          interrupt: () => Promise<void>;
+        };
+        g.interrupt = vi.fn().mockResolvedValue(undefined);
+        return g;
+      });
+      installSdkMock({ query: querySpy });
+
+      const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
+      backendRef = backend;
+      const events = await collectEvents(backend.sendMessage('sess-cancel', 'long task'));
+
+      expect(querySpy).toHaveBeenCalledTimes(1);
+      expect(events).toEqual([{ type: 'complete', summary: 'Cancelled by user' }]);
+    });
   });
 
   describe('resumeSession', () => {
@@ -422,6 +446,67 @@ describe('ClaudeSdkBackend', () => {
       const events = await collectEvents(backend.resumeSession('sess-1'));
       expect(events.length).toBeGreaterThanOrEqual(1);
       expect(events[0]?.type).toBe('text');
+    });
+
+    it('persists SDK session_id and restores conversation on resume across restarts', async () => {
+      const persistedIds = new Map<string, string>();
+      const onSdkSessionId = vi.fn((sessionId: string, sdkId: string) => {
+        persistedIds.set(sessionId, sdkId);
+      });
+      const getSdkSessionId = vi.fn((sessionId: string) => persistedIds.get(sessionId) ?? null);
+
+      const sdkMock = mockSdkModule([
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: 'First turn response' }] },
+          session_id: 'sdk-conv-99',
+        },
+        {
+          type: 'result',
+          subtype: 'success',
+          result: 'Done',
+          total_cost_usd: 0.001,
+          num_turns: 1,
+          session_id: 'sdk-conv-99',
+        },
+      ]);
+      installSdkMock(sdkMock);
+
+      // Process 1: initial turn records SDK session ID
+      const backend1 = new ClaudeSdkBackend(
+        createMockAuditRepo(),
+        () => 'sk-ant-test',
+        () => 'api-key',
+        () => 'User',
+        () => null,
+        onSdkSessionId,
+        getSdkSessionId,
+      );
+      await collectEvents(backend1.sendMessage('app-sess-1', 'hello'));
+      expect(onSdkSessionId).toHaveBeenCalledWith('app-sess-1', 'sdk-conv-99');
+
+      // Process 2 (simulated restart with fresh backend instance): resume and send next message
+      const backend2 = new ClaudeSdkBackend(
+        createMockAuditRepo(),
+        () => 'sk-ant-test',
+        () => 'api-key',
+        () => 'User',
+        () => null,
+        onSdkSessionId,
+        getSdkSessionId,
+      );
+      const resumeEvents = await collectEvents(backend2.resumeSession('app-sess-1'));
+      expect(resumeEvents[0]?.type).toBe('text');
+      if (resumeEvents[0]?.type === 'text') {
+        expect(resumeEvents[0].content).toContain('previous messages');
+      }
+
+      await collectEvents(backend2.sendMessage('app-sess-1', 'follow up'));
+      const secondCall = sdkMock.query.mock.calls[1] as [
+        { options: { continue?: boolean; resume?: string } },
+      ];
+      expect(secondCall[0].options.continue).toBe(true);
+      expect(secondCall[0].options.resume).toBe('sdk-conv-99');
     });
   });
 

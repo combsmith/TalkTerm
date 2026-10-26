@@ -132,4 +132,28 @@ describe('SessionIPCHandler', () => {
       apiKey: 'sk-ant-api03-test',
     });
   });
+
+  it('triggers agentRouter.resumeSession when SESSION_RESUME is invoked', () => {
+    const repo = createMockSessionRepo();
+    vi.mocked(repo.findById).mockReturnValue({
+      id: 'sess-123',
+      sdkSessionId: 'sdk-123',
+      workspacePath: '/projects/app',
+      avatarPersonaId: 'mary',
+      status: 'paused',
+      createdAt: '',
+      updatedAt: '',
+    });
+    const store = new InMemoryConfigStore();
+    const agentRouter = {
+      startSession: vi.fn().mockResolvedValue(undefined),
+      resumeSession: vi.fn().mockResolvedValue(undefined),
+    };
+    new SessionIPCHandler(repo, store, undefined, agentRouter).register(ipcMain);
+    const resume = handlers.get(IPC_CHANNELS.SESSION_RESUME);
+    const result = resume?.({}, 'sess-123');
+    expect(repo.updateStatus).toHaveBeenCalledWith('sess-123', 'active');
+    expect(agentRouter.resumeSession).toHaveBeenCalledWith('sess-123');
+    expect(result).toMatchObject({ id: 'sess-123' });
+  });
 });

@@ -227,4 +227,44 @@ describe('AgentIPCHandler', () => {
 
     expect(router.cancel).toHaveBeenCalled();
   });
+
+  it('serializes concurrent agent:action requests for the same session', async () => {
+    const router = createMockRouter();
+    const webContents = createMockWebContents();
+    const callOrder: string[] = [];
+    let finishFirst!: () => void;
+
+    vi.mocked(router.sendMessage)
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            callOrder.push('start-1');
+            finishFirst = () => {
+              callOrder.push('end-1');
+              resolve();
+            };
+          }),
+      )
+      .mockImplementationOnce(() => {
+        callOrder.push('start-2');
+        callOrder.push('end-2');
+        return Promise.resolve();
+      });
+
+    const handler = new AgentIPCHandler(router, () => webContents);
+    handler.register(ipcMain);
+
+    const agentAction = handlers.get(IPC_CHANNELS.AGENT_ACTION);
+    const p1 = agentAction?.({}, 'session-1', 'first');
+    const p2 = agentAction?.({}, 'session-1', 'second');
+
+    await vi.waitFor(() => {
+      expect(callOrder).toEqual(['start-1']);
+    });
+
+    finishFirst();
+    await Promise.all([p1, p2]);
+
+    expect(callOrder).toEqual(['start-1', 'end-1', 'start-2', 'end-2']);
+  });
 });

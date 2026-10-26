@@ -60,6 +60,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_BROWSE) as Promise<string | null>,
   setWorkspace: (path: string): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_SET, path) as Promise<void>,
+  getWorkspace: (): Promise<string | null> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET, 'workspacePath') as Promise<string | null>,
 
   // Launch
   assessLaunchState: (): Promise<unknown> =>

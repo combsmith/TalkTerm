@@ -31,6 +31,7 @@ export interface ElectronAPI {
   // Workspace
   browseWorkspace: () => Promise<string | null>;
   setWorkspace: (path: string) => Promise<void>;
+  getWorkspace?: () => Promise<string | null>;
 
   // Launch
   assessLaunchState: () => Promise<LaunchState>;
