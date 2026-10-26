@@ -285,8 +285,23 @@ export class SherpaOnnxStt {
             fail(new Error(`HTTP ${String(code)} downloading ${reqUrl}`));
             return;
           }
+          response.on('error', (err) => {
+            fail(err);
+          });
+          response.on('aborted', () => {
+            fail(new Error(`Response aborted downloading ${reqUrl}`));
+          });
+          response.on('close', () => {
+            if (!response.complete) {
+              fail(new Error(`Response closed prematurely downloading ${reqUrl}`));
+            }
+          });
           file.on('finish', () => {
             if (settled) return;
+            if (!response.complete) {
+              fail(new Error(`Response closed prematurely downloading ${reqUrl}`));
+              return;
+            }
             settled = true;
             file.close();
             fs.renameSync(tempPath, destPath);

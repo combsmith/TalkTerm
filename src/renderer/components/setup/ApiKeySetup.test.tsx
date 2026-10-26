@@ -168,6 +168,41 @@ describe('ApiKeySetup', () => {
 
       delete (window as { electronAPI?: unknown }).electronAPI;
     }, 10000);
+
+    it('discards stale validation results when the input changes while validation is in flight', async () => {
+      const onValidated = vi.fn();
+      let resolveValidation!: (res: { valid: boolean }) => void;
+      const validateApiKey = vi.fn(
+        () =>
+          new Promise<{ valid: boolean }>((resolve) => {
+            resolveValidation = resolve;
+          }),
+      );
+      Object.defineProperty(window, 'electronAPI', {
+        value: { validateApiKey },
+        writable: true,
+        configurable: true,
+      });
+
+      render(<ApiKeySetup {...defaultProps} onValidated={onValidated} />);
+      const user = await navigateToApiKeyEntry();
+      const input = screen.getByPlaceholderText('sk-ant-api03-...');
+
+      await user.type(input, 'sk-ant-api03-valid-key{Enter}');
+      await waitFor(() => {
+        expect(validateApiKey).toHaveBeenCalledWith('sk-ant-api03-valid-key');
+      });
+
+      // Edit the input to a different value before validateApiKey resolves
+      await user.type(input, '-edited');
+      resolveValidation({ valid: true });
+
+      await new Promise((r) => setTimeout(r, 100));
+      expect(screen.queryByText(/key verified/i)).not.toBeInTheDocument();
+      expect(onValidated).not.toHaveBeenCalled();
+
+      delete (window as { electronAPI?: unknown }).electronAPI;
+    }, 10000);
   });
 
   describe('env key detected', () => {

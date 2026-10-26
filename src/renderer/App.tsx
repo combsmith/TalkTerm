@@ -43,7 +43,7 @@ export function App(): ReactElement | null {
   async function startNewSession(): Promise<void> {
     setSessionError(null);
     try {
-      const id = await window.electronAPI.startSession(workspacePath || '/tmp');
+      const id = await window.electronAPI.startSession(workspacePath);
       setSessionId(id);
       setPhase('conversation');
     } catch (err: unknown) {

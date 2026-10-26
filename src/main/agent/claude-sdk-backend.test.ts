@@ -135,6 +135,55 @@ describe('ClaudeSdkBackend', () => {
       expect(completeEvents).toHaveLength(1);
     });
 
+    it('associates greeting SDK session_id and assistant turn with config.sessionId for subsequent turns', async () => {
+      const sdkMock = mockSdkModule([
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: 'Hello! How can I help?' }] },
+          session_id: 'sdk-greeting-99',
+        },
+        {
+          type: 'result',
+          subtype: 'success',
+          result: 'Session started',
+          total_cost_usd: 0.001,
+          num_turns: 1,
+          session_id: 'sdk-greeting-99',
+        },
+      ]);
+      installSdkMock(sdkMock);
+
+      const onSdkSessionId = vi.fn();
+      const backend = new ClaudeSdkBackend(
+        createMockAuditRepo(),
+        () => 'sk-ant-test-key',
+        () => 'api-key',
+        () => 'User',
+        () => null,
+        onSdkSessionId,
+      );
+
+      await collectEvents(
+        backend.startSession({
+          sessionId: 'app-sess-1',
+          workspacePath: '/tmp/project',
+          apiKey: 'sk-ant-test-key',
+        }),
+      );
+
+      expect(onSdkSessionId).toHaveBeenCalledWith('app-sess-1', 'sdk-greeting-99');
+
+      await collectEvents(backend.sendMessage('app-sess-1', 'First user reply', '/tmp/project'));
+      expect(sdkMock.query).toHaveBeenCalledTimes(2);
+      const secondTurnArgs = sdkMock.query.mock.calls[1] as [
+        { prompt: string; options: Record<string, unknown> },
+      ];
+      expect(secondTurnArgs[0].options).toMatchObject({
+        continue: true,
+        resume: 'sdk-greeting-99',
+      });
+    });
+
     it('yields demo mode message when SDK is not installed', async () => {
       clearSdkMock();
       // Force SDK to be unavailable by mocking the import to throw

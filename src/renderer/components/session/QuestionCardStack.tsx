@@ -87,7 +87,11 @@ function reducer(state: CardStackState, action: CardStackAction): CardStackState
         qChips.splice(idx, 1);
       }
       newChips[action.questionIndex] = qChips;
-      return { ...state, selectedChips: newChips };
+      const newSkipped = [...state.skipped];
+      if (qChips.length > 0) {
+        newSkipped[action.questionIndex] = false;
+      }
+      return { ...state, selectedChips: newChips, skipped: newSkipped };
     }
     case 'show-review':
       return { ...state, showReview: true };

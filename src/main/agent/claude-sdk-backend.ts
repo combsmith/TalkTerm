@@ -478,8 +478,10 @@ export class ClaudeSdkBackend implements AgentBackend {
 
     const queryObj = sdk.query({ prompt, options });
 
+    const initSessionId =
+      config.sessionId !== undefined && config.sessionId !== '' ? config.sessionId : 'session-init';
     this.activeQuery = queryObj;
-    yield* this.consumeSdkStream(queryObj, 'session-init');
+    yield* this.consumeSdkStream(queryObj, initSessionId);
     this.activeQuery = null;
   }
 

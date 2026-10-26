@@ -33,6 +33,8 @@ export function ApiKeySetup({
       : null,
   );
   const inputRef = useRef<HTMLInputElement>(null);
+  const validationSeqRef = useRef(0);
+  const latestKeyRef = useRef(key);
 
   // Auto-focus input when API key entry is shown
   useEffect(() => {
@@ -57,13 +59,19 @@ export function ApiKeySetup({
   }
 
   async function handleValidate(): Promise<void> {
-    if (key.trim() === '') return;
+    const submittedKey = key;
+    if (submittedKey.trim() === '') return;
+    const seq = ++validationSeqRef.current;
+    latestKeyRef.current = submittedKey;
     setIsValidating(true);
     setError(null);
 
     await new Promise((resolve) => setTimeout(resolve, 500));
+    if (validationSeqRef.current !== seq || latestKeyRef.current !== submittedKey) {
+      return;
+    }
 
-    if (key.startsWith('sk-ant-oat')) {
+    if (submittedKey.startsWith('sk-ant-oat')) {
       setIsValid(false);
       setError(
         'This looks like a Claude subscription token — use the "Claude Pro/Max" option instead, or enter an API key that starts with sk-ant-api03-.',
@@ -72,12 +80,15 @@ export function ApiKeySetup({
       return;
     }
 
-    if (key.startsWith('sk-ant-api')) {
+    if (submittedKey.startsWith('sk-ant-api')) {
       const validateApiKey = (
         window as { electronAPI?: { validateApiKey?: typeof window.electronAPI.validateApiKey } }
       ).electronAPI?.validateApiKey;
       if (typeof validateApiKey === 'function') {
-        const result = await validateApiKey(key);
+        const result = await validateApiKey(submittedKey);
+        if (validationSeqRef.current !== seq || latestKeyRef.current !== submittedKey) {
+          return;
+        }
         setIsValid(result.valid);
         setError(result.valid ? null : (result.message ?? 'Invalid API key.'));
       } else {
@@ -203,10 +214,13 @@ export function ApiKeySetup({
           <button
             type="button"
             onClick={() => {
+              validationSeqRef.current++;
+              latestKeyRef.current = '';
               setAuthChoice('none');
               setKey('');
               setError(null);
               setIsValid(false);
+              setIsValidating(false);
             }}
             className="text-small text-text-muted-on-dark hover:text-text-on-dark"
           >
@@ -222,8 +236,11 @@ export function ApiKeySetup({
             type="password"
             value={key}
             onChange={(e) => {
+              validationSeqRef.current++;
+              latestKeyRef.current = e.target.value;
               setKey(e.target.value);
               setIsValid(false);
+              setIsValidating(false);
               setError(null);
             }}
             placeholder="sk-ant-api03-..."

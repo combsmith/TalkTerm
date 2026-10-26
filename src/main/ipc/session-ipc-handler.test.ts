@@ -126,11 +126,30 @@ describe('SessionIPCHandler', () => {
     new SessionIPCHandler(repo, store, keyManager, agentRouter).register(ipcMain);
     const start = handlers.get(IPC_CHANNELS.SESSION_START);
     const workspace = path.join(os.tmpdir(), 'talkterm-test-project');
-    start?.({}, workspace);
+    const sessionId = start?.({}, workspace) as string;
     expect(agentRouter.startSession).toHaveBeenCalledWith({
+      sessionId,
       workspacePath: workspace,
       apiKey: 'sk-ant-api03-test',
     });
+  });
+
+  it('resolves empty workspacePath to os.tmpdir() when starting a session without a chosen workspace', () => {
+    const repo = createMockSessionRepo();
+    const store = new InMemoryConfigStore();
+    const agentRouter = {
+      startSession: vi.fn().mockResolvedValue(undefined),
+    };
+    new SessionIPCHandler(repo, store, undefined, agentRouter).register(ipcMain);
+    const start = handlers.get(IPC_CHANNELS.SESSION_START);
+    const sessionId = start?.({}, '') as string;
+    expect(typeof sessionId).toBe('string');
+    expect(agentRouter.startSession).toHaveBeenCalledWith({
+      sessionId,
+      workspacePath: os.tmpdir(),
+      apiKey: expect.any(String) as string,
+    });
+    expect(() => start?.({}, 123)).toThrow('workspacePath must be a non-empty string');
   });
 
   it('triggers agentRouter.resumeSession when SESSION_RESUME is invoked', () => {

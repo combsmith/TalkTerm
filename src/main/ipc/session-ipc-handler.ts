@@ -1,3 +1,4 @@
+import os from 'node:os';
 import { IPC_CHANNELS } from '../../shared/types/domain/ipc-channels';
 import { createSession } from '../../shared/types/domain/session';
 import type { SessionRepository } from '../../shared/types/ports/session-repository';
@@ -7,7 +8,11 @@ import { enqueueRouterOperation, type IPCMain, type IPCRegistrar } from './ipc-r
 import { validateString } from './validate-string';
 
 export interface SessionStarter {
-  startSession(config: { workspacePath: string; apiKey: string }): Promise<void>;
+  startSession(config: {
+    sessionId?: string;
+    workspacePath: string;
+    apiKey: string;
+  }): Promise<void>;
   resumeSession?(sessionId: string): Promise<void>;
 }
 
@@ -21,7 +26,11 @@ export class SessionIPCHandler implements IPCRegistrar {
 
   register(ipcMain: IPCMain): void {
     ipcMain.handle(IPC_CHANNELS.SESSION_START, (_event: unknown, workspacePath: unknown) => {
-      const validPath = validateString(workspacePath, 'workspacePath');
+      if (typeof workspacePath !== 'string') {
+        throw new Error('workspacePath must be a non-empty string');
+      }
+      const trimmedPath = workspacePath.trim();
+      const validPath = trimmedPath !== '' ? trimmedPath : os.tmpdir();
       const profile = this.configStore.get('userProfile') as
         | { avatarPersonaId: string | null }
         | undefined;
@@ -45,6 +54,7 @@ export class SessionIPCHandler implements IPCRegistrar {
               : '';
         void enqueueRouterOperation(router, () =>
           router.startSession({
+            sessionId: session.id,
             workspacePath: validPath,
             apiKey,
           }),

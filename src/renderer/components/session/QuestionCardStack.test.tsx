@@ -298,4 +298,26 @@ describe('QuestionCardStack', () => {
     expect(screen.getByText('PostgreSQL')).toBeInTheDocument();
     expect(screen.getByText('Next month')).toBeInTheDocument();
   });
+
+  it('clears the skipped flag when a suggestion chip is selected on a previously skipped question', async () => {
+    const onSubmit = vi.fn();
+    const user = userEvent.setup();
+    render(<QuestionCardStack {...defaultProps} onSubmit={onSubmit} />);
+
+    // Advance to question 2 (has suggestions), then skip it
+    await user.click(screen.getByRole('button', { name: /next question/i }));
+    await user.click(screen.getByRole('button', { name: /skip question/i }));
+
+    // Navigate back to question 2 and select a suggestion chip without typing
+    await user.click(screen.getByRole('button', { name: /previous question/i }));
+    await user.click(screen.getByText('Competition discovery'));
+
+    // Navigate to question 3 and check dot 2 is answered (not skipped), then submit
+    await user.click(screen.getByRole('button', { name: /next question/i }));
+    const dot2 = screen.getByRole('button', { name: /question 2/i });
+    expect(dot2).toHaveAttribute('data-state', 'answered');
+
+    await user.click(screen.getByRole('button', { name: /submit all answers/i }));
+    expect(screen.getByText('Competition discovery')).toBeInTheDocument();
+  });
 });

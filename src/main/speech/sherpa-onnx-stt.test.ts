@@ -112,6 +112,8 @@ describe('SherpaOnnxStt', () => {
         const res = {
           statusCode: 200,
           headers: {},
+          complete: true,
+          on: vi.fn(),
           resume: vi.fn(),
           pipe: vi.fn(() => {
             fileStream.emit('finish');
@@ -226,6 +228,8 @@ describe('SherpaOnnxStt', () => {
         cb({
           statusCode: 200,
           headers: {},
+          complete: true,
+          on: vi.fn(),
           resume: vi.fn(),
           pipe: vi.fn(() => {
             fileStream.emit('error', new Error('ENOSPC: no space left on device'));
@@ -237,6 +241,63 @@ describe('SherpaOnnxStt', () => {
       const stt = new SherpaOnnxStt();
       await expect(stt.ensureModel()).rejects.toThrow('ENOSPC');
       expect(mockUnlinkSync).toHaveBeenCalledWith(path.join(EXPECTED_MODEL_DIR, 'tokens.txt.tmp'));
+    });
+
+    it('rejects and cleans up temp file when response stream emits error or closes prematurely', async () => {
+      mockExistsSync.mockImplementation((p: string) => {
+        if (p.endsWith('tokens.txt')) return false;
+        if (p.endsWith('.tmp')) return true;
+        return true;
+      });
+
+      const fileStream = createFakeFileStream();
+      mockCreateWriteStream.mockReturnValue(fileStream);
+
+      mockHttpsGet.mockImplementationOnce((_url: string, cb: (res: any) => void) => {
+        const req = createFakeRequest();
+        const res = new EventEmitter() as EventEmitter & {
+          statusCode: number;
+          headers: Record<string, string>;
+          complete: boolean;
+          resume: ReturnType<typeof vi.fn>;
+          pipe: ReturnType<typeof vi.fn>;
+        };
+        res.statusCode = 200;
+        res.headers = {};
+        res.complete = false;
+        res.resume = vi.fn();
+        res.pipe = vi.fn(() => {
+          res.emit('error', new Error('ECONNRESET: socket hang up'));
+        });
+        cb(res);
+        return req;
+      });
+
+      const stt = new SherpaOnnxStt();
+      await expect(stt.ensureModel()).rejects.toThrow('ECONNRESET');
+      expect(mockUnlinkSync).toHaveBeenCalledWith(path.join(EXPECTED_MODEL_DIR, 'tokens.txt.tmp'));
+
+      mockHttpsGet.mockImplementationOnce((_url: string, cb: (res: any) => void) => {
+        const req = createFakeRequest();
+        const res = new EventEmitter() as EventEmitter & {
+          statusCode: number;
+          headers: Record<string, string>;
+          complete: boolean;
+          resume: ReturnType<typeof vi.fn>;
+          pipe: ReturnType<typeof vi.fn>;
+        };
+        res.statusCode = 200;
+        res.headers = {};
+        res.complete = false;
+        res.resume = vi.fn();
+        res.pipe = vi.fn(() => {
+          res.emit('close');
+        });
+        cb(res);
+        return req;
+      });
+
+      await expect(stt.ensureModel()).rejects.toThrow('Response closed prematurely');
     });
   });
 
