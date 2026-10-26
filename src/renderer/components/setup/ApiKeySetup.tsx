@@ -23,6 +23,7 @@ export function ApiKeySetup({
   detectedEnvKey,
 }: ApiKeySetupProps): ReactElement {
   const [authChoice, setAuthChoice] = useState<AuthChoice>('none');
+  const [envKeyDeclined, setEnvKeyDeclined] = useState(false);
   const [key, setKey] = useState('');
   const [isValid, setIsValid] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
@@ -102,7 +103,7 @@ export function ApiKeySetup({
   const autoFocusRef = useCallback((el: HTMLButtonElement | null) => el?.focus(), []);
 
   // If ANTHROPIC_API_KEY env var detected, offer to use it directly
-  if (detectedEnvKey === true) {
+  if (detectedEnvKey === true && !envKeyDeclined) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-stage-bg">
         <form
@@ -134,6 +135,7 @@ export function ApiKeySetup({
           <button
             type="button"
             onClick={() => {
+              setEnvKeyDeclined(true);
               setError(null);
             }}
             className="text-center text-small text-text-muted-on-dark hover:text-text-on-dark"

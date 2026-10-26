@@ -118,6 +118,21 @@ describe('parseMarkdownTable', () => {
     expect(result.rows).toHaveLength(1);
     expect(result.rows[0]).toEqual(['Vite', '60k']);
   });
+
+  it('preserves interior empty cells and dash placeholders without shifting columns', () => {
+    const table = [
+      '| Product | Price | Available |',
+      '|---------|-------|-----------|',
+      '| Alpha   |       | Yes       |',
+      '| Beta    | ---   | -         |',
+    ].join('\n');
+    const result = parseMarkdownTable(table);
+    expect(result.headers).toEqual(['Product', 'Price', 'Available']);
+    expect(result.rows).toEqual([
+      ['Alpha', '', 'Yes'],
+      ['Beta', '---', '-'],
+    ]);
+  });
 });
 
 describe('parsePlanContent', () => {

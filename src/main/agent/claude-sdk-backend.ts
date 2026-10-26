@@ -157,6 +157,7 @@ interface ConversationTurn {
 export class ClaudeSdkBackend implements AgentBackend {
   private abortController: AbortController | null = null;
   private activeQuery: SdkQuery | null = null;
+  private lastTurnError = '';
   private readonly sessionHistory = new Map<string, ConversationTurn[]>();
   private readonly sdkSessionIds = new Map<string, string>();
 
@@ -499,12 +500,13 @@ export class ClaudeSdkBackend implements AgentBackend {
     const history = this.sessionHistory.get(sessionId);
     const hasPriorTurns = (history !== undefined && history.length > 1) || persistedSdkId !== null;
     const isApproved = message.trim().toLowerCase() === 'approved';
+    let resumeFailed = false;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       this.abortController = new AbortController();
+      this.lastTurnError = '';
 
-      // On retry, disable continue to avoid session resume errors
-      const useContinue = hasPriorTurns && attempt === 0;
+      const useContinue = hasPriorTurns && !resumeFailed;
       const options = this.buildSdkOptions(
         apiKey,
         {
@@ -512,7 +514,7 @@ export class ClaudeSdkBackend implements AgentBackend {
           maxTurns: 25,
           maxBudgetUsd: 1.0,
           continue: useContinue,
-          ...(persistedSdkId !== null && attempt === 0 ? { resume: persistedSdkId } : {}),
+          ...(persistedSdkId !== null && !resumeFailed ? { resume: persistedSdkId } : {}),
           ...(isApproved ? { permissionMode: 'acceptEdits', allowedTools: undefined } : {}),
         },
         bmadContext,
@@ -543,8 +545,11 @@ export class ClaudeSdkBackend implements AgentBackend {
           !hadToolActivity &&
           !this.abortController.signal.aborted
         ) {
-          // Swallow transient pre-tool error and retry
+          // Swallow transient pre-tool error and retry; only drop resume context on confirmed resume failures
           hadError = true;
+          if (this.isResumeFailure(this.lastTurnError)) {
+            resumeFailed = true;
+          }
           console.warn(
             `[SDK Debug] Error on attempt ${String(attempt + 1)}, retrying...`,
             event.userMessage,
@@ -564,6 +569,12 @@ export class ClaudeSdkBackend implements AgentBackend {
         return;
       }
     }
+  }
+
+  private isResumeFailure(rawError: string): boolean {
+    return /\b(?:resume|session|conversation)\b.*\b(?:not found|invalid|missing|expired|no such)\b|\b(?:no conversation|not found|invalid|no such)\b.*\b(?:resume|session|conversation)\b/i.test(
+      rawError,
+    );
   }
 
   /**
@@ -605,7 +616,9 @@ export class ClaudeSdkBackend implements AgentBackend {
         yield { type: 'complete', summary: 'Cancelled by user' };
         return;
       }
-      console.error('[ClaudeSdkBackend] SDK error:', err instanceof Error ? err.message : err);
+      const errMessage = err instanceof Error ? err.message : String(err);
+      this.lastTurnError = errMessage;
+      console.error('[ClaudeSdkBackend] SDK error:', errMessage);
       const category = classifyError(err);
       yield {
         type: 'error',
@@ -771,6 +784,7 @@ export class ClaudeSdkBackend implements AgentBackend {
     }
     const error = msg as SdkResultError;
     const rawDetail = error.errors?.join('; ') ?? '';
+    this.lastTurnError = rawDetail;
     const category = classifyError(new Error(rawDetail));
     return [
       {

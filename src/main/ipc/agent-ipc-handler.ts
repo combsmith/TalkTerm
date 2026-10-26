@@ -6,7 +6,7 @@ import {
 import { IPC_CHANNELS } from '../../shared/types/domain/ipc-channels';
 import type { SessionRepository } from '../../shared/types/ports/session-repository';
 import type { AgentMessageRouter } from '../agent/agent-message-router';
-import type { IPCMain, IPCRegistrar } from './ipc-registrar';
+import { enqueueRouterOperation, type IPCMain, type IPCRegistrar } from './ipc-registrar';
 import { validateString } from './validate-string';
 
 export interface WebContents {
@@ -14,8 +14,6 @@ export interface WebContents {
 }
 
 export class AgentIPCHandler implements IPCRegistrar {
-  private readonly sessionQueues = new Map<string, Promise<void>>();
-
   constructor(
     private readonly router: AgentMessageRouter,
     private readonly getWebContents: () => WebContents | null,
@@ -42,8 +40,7 @@ export class AgentIPCHandler implements IPCRegistrar {
         const validSessionId = validateString(sessionId, 'sessionId');
         const validMessage = validateString(message, 'message');
 
-        const previous = this.sessionQueues.get(validSessionId) ?? Promise.resolve();
-        const current = previous.then(async () => {
+        await enqueueRouterOperation(this.router, async () => {
           try {
             const session = this.sessionRepo?.findById(validSessionId);
             const workspacePath = session?.workspacePath;
@@ -58,14 +55,6 @@ export class AgentIPCHandler implements IPCRegistrar {
             });
           }
         });
-        this.sessionQueues.set(validSessionId, current);
-        try {
-          await current;
-        } finally {
-          if (this.sessionQueues.get(validSessionId) === current) {
-            this.sessionQueues.delete(validSessionId);
-          }
-        }
       },
     );
 

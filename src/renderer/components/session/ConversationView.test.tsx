@@ -951,7 +951,22 @@ describe('ConversationView', () => {
     });
     expect(mockSendAgentMessage).toHaveBeenCalledWith('s1', 'barge in message');
 
-    // 7. Unmount with active timers
+    // 7. Cancel delayed mic restart when user disables live mode within 300ms after TTS ends
+    mockSttInstance.start.mockClear();
+    mockSttInstance.isListening = false;
+    act(() => {
+      mockTtsInstance.onEnd?.();
+    });
+    // User clicks mic to stop live mode before 300ms elapses
+    act(() => {
+      screen.getByRole('button', { name: /stop recording/i }).click();
+    });
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(mockSttInstance.start).not.toHaveBeenCalled();
+
+    // 8. Unmount with active timers
     simulateAgentEvent({ type: 'text', content: 'Pending on unmount' });
     simulateAgentEvent({ type: 'progress', step: 'Pending progress', status: 'in-progress' });
     unmount();

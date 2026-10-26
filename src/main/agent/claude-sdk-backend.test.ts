@@ -508,6 +508,96 @@ describe('ClaudeSdkBackend', () => {
       expect(secondCall[0].options.continue).toBe(true);
       expect(secondCall[0].options.resume).toBe('sdk-conv-99');
     });
+
+    it('preserves continue and resume on transient retry and drops them only on confirmed resume failure', async () => {
+      let attemptCount = 0;
+      const querySpy = vi.fn().mockImplementation(() => {
+        attemptCount++;
+        if (attemptCount === 1) {
+          // Turn 1 succeeds and establishes SDK session ID
+          return createMockSdkQuery([
+            {
+              type: 'assistant',
+              message: { content: [{ type: 'text', text: 'Options: 1 or 2' }] },
+              session_id: 'sdk-conv-keep',
+            },
+            {
+              type: 'result',
+              subtype: 'success',
+              result: 'Done',
+              total_cost_usd: 0.001,
+              num_turns: 1,
+              session_id: 'sdk-conv-keep',
+            },
+          ]);
+        }
+        if (attemptCount === 2) {
+          // Turn 2 attempt 1 fails with transient timeout
+          // eslint-disable-next-line @typescript-eslint/require-await
+          async function* transientFail(): AsyncGenerator<Record<string, unknown>, void> {
+            throw new Error('Request timed out');
+          }
+          const g = transientFail() as AsyncGenerator<Record<string, unknown>, void> & {
+            interrupt: () => Promise<void>;
+          };
+          g.interrupt = vi.fn().mockResolvedValue(undefined);
+          return g;
+        }
+        if (attemptCount === 3) {
+          // Turn 2 attempt 2 fails with confirmed session resume error
+          return createMockSdkQuery([
+            {
+              type: 'result',
+              subtype: 'error_during_execution',
+              errors: ['No conversation found to resume: sdk-conv-keep'],
+              session_id: 'sdk-conv-keep',
+            },
+          ]);
+        }
+        // Turn 2 attempt 3 succeeds after dropping broken resume
+        return createMockSdkQuery([
+          {
+            type: 'assistant',
+            message: { content: [{ type: 'text', text: 'Recovered' }] },
+            session_id: 'sdk-conv-new',
+          },
+          {
+            type: 'result',
+            subtype: 'success',
+            result: 'Done',
+            total_cost_usd: 0.001,
+            num_turns: 1,
+            session_id: 'sdk-conv-new',
+          },
+        ]);
+      });
+      installSdkMock({ query: querySpy });
+
+      const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test');
+      await collectEvents(backend.sendMessage('app-sess-keep', 'give me options'));
+      await collectEvents(backend.sendMessage('app-sess-keep', 'use option 2'));
+
+      // Call index 1: Turn 2 initial attempt -> continue: true, resume: 'sdk-conv-keep'
+      const turn2Attempt1 = querySpy.mock.calls[1] as [
+        { options: { continue?: boolean; resume?: string } },
+      ];
+      expect(turn2Attempt1[0].options.continue).toBe(true);
+      expect(turn2Attempt1[0].options.resume).toBe('sdk-conv-keep');
+
+      // Call index 2: Turn 2 retry after transient timeout -> preserves continue: true and resume: 'sdk-conv-keep'
+      const turn2Attempt2 = querySpy.mock.calls[2] as [
+        { options: { continue?: boolean; resume?: string } },
+      ];
+      expect(turn2Attempt2[0].options.continue).toBe(true);
+      expect(turn2Attempt2[0].options.resume).toBe('sdk-conv-keep');
+
+      // Call index 3: Turn 2 retry after confirmed resume error -> drops continue and resume
+      const turn2Attempt3 = querySpy.mock.calls[3] as [
+        { options: { continue?: boolean; resume?: string } },
+      ];
+      expect(turn2Attempt3[0].options.continue).toBe(false);
+      expect(turn2Attempt3[0].options.resume).toBeUndefined();
+    });
   });
 
   describe('SDK message filtering', () => {

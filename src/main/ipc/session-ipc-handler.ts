@@ -3,7 +3,7 @@ import { createSession } from '../../shared/types/domain/session';
 import type { SessionRepository } from '../../shared/types/ports/session-repository';
 import type { KeyManager } from '../security/safe-storage-key-manager';
 import type { ConfigStore } from '../storage/electron-config-store';
-import type { IPCMain, IPCRegistrar } from './ipc-registrar';
+import { enqueueRouterOperation, type IPCMain, type IPCRegistrar } from './ipc-registrar';
 import { validateString } from './validate-string';
 
 export interface SessionStarter {
@@ -34,6 +34,7 @@ export class SessionIPCHandler implements IPCRegistrar {
       const session = createSession(validPath, avatarId);
       this.sessionRepo.save(session);
       if (this.agentRouter !== undefined) {
+        const router = this.agentRouter;
         const storedKey = this.keyManager?.retrieveKey() ?? null;
         const envKey = process.env['ANTHROPIC_API_KEY'];
         const apiKey =
@@ -42,10 +43,12 @@ export class SessionIPCHandler implements IPCRegistrar {
             : envKey !== undefined && envKey !== ''
               ? envKey
               : '';
-        void this.agentRouter.startSession({
-          workspacePath: validPath,
-          apiKey,
-        });
+        void enqueueRouterOperation(router, () =>
+          router.startSession({
+            workspacePath: validPath,
+            apiKey,
+          }),
+        );
       }
       return session.id;
     });
@@ -58,7 +61,8 @@ export class SessionIPCHandler implements IPCRegistrar {
       }
       this.sessionRepo.updateStatus(session.id, 'active');
       if (this.agentRouter?.resumeSession !== undefined) {
-        void this.agentRouter.resumeSession(session.id);
+        const router = this.agentRouter;
+        void enqueueRouterOperation(router, () => router.resumeSession?.(session.id));
       }
       return session;
     });

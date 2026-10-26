@@ -53,4 +53,41 @@ describe('AgentMessageRouter', () => {
       router.startSession({ workspacePath: '/tmp', apiKey: 'test' }),
     ).resolves.toBeUndefined();
   });
+
+  it('serializes startSession with subsequent sendMessage and resumeSession turns', async () => {
+    const order: string[] = [];
+    let releaseStart!: () => void;
+
+    const backend = {
+      async *startSession() {
+        order.push('start-begin');
+        await new Promise<void>((resolve) => {
+          releaseStart = resolve;
+        });
+        order.push('start-end');
+        yield { type: 'text' as const, content: 'Greeting' };
+      },
+      // eslint-disable-next-line @typescript-eslint/require-await
+      async *sendMessage() {
+        order.push('send');
+        yield { type: 'text' as const, content: 'Reply' };
+      },
+      // eslint-disable-next-line @typescript-eslint/require-await
+      async *resumeSession() {
+        order.push('resume');
+        yield { type: 'text' as const, content: 'Resumed' };
+      },
+      cancelCurrentAction: vi.fn(),
+    };
+
+    const router = new AgentMessageRouter(backend);
+    const pStart = router.startSession({ workspacePath: '/tmp', apiKey: 'key' });
+    const pSend = router.sendMessage('s1', 'hello');
+    const pResume = router.resumeSession('s1');
+
+    expect(order).toEqual(['start-begin']);
+    releaseStart();
+    await Promise.all([pStart, pSend, pResume]);
+    expect(order).toEqual(['start-begin', 'start-end', 'send', 'resume']);
+  });
 });

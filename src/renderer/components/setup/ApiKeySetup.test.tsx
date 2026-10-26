@@ -192,7 +192,7 @@ describe('ApiKeySetup', () => {
       expect(onValidated).toHaveBeenCalledWith('ENV_KEY');
     });
 
-    it('clicking "Enter a different key instead" clears any error state', async () => {
+    it('clicking "Enter a different key instead" leaves the env key screen and shows manual auth options', async () => {
       const user = userEvent.setup();
       render(<ApiKeySetup {...defaultProps} detectedEnvKey={true} />);
       const differentKeyBtn = screen.getByRole('button', {
@@ -200,7 +200,8 @@ describe('ApiKeySetup', () => {
       });
       expect(differentKeyBtn).toBeInTheDocument();
       await user.click(differentKeyBtn);
-      expect(screen.getByText(/found an existing api key/i)).toBeInTheDocument();
+      expect(screen.queryByText(/found an existing api key/i)).not.toBeInTheDocument();
+      expect(screen.getByText(/How would you like to connect to Claude/i)).toBeInTheDocument();
     });
   });
 

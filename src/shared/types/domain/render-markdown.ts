@@ -58,9 +58,11 @@ export function parseMarkdownTable(text: string): TableData {
 
   const parseCells = (line: string): string[] =>
     line
+      .trim()
+      .replace(/^\|/, '')
+      .replace(/\|$/, '')
       .split('|')
-      .map((c) => c.trim())
-      .filter((c) => c !== '' && !/^-+$/.test(c));
+      .map((c) => c.trim());
 
   const headers = parseCells(lines[0] ?? '');
   // Skip the separator line (index 1)

@@ -118,10 +118,18 @@ export function ConversationView({
   const ttsRef = useRef<WebSpeechTts | null>(null);
   const voiceRef = useRef<string | undefined>(undefined);
   const liveModeRef = useRef(false);
+  const restartListeningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Accumulates text events within a single agent turn for question detection */
   const pendingTextRef = useRef('');
   /** Debounce timer for text flush — allows multi-chunk responses to accumulate before parsing */
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearRestartListeningTimer = useCallback((): void => {
+    if (restartListeningTimerRef.current !== null) {
+      clearTimeout(restartListeningTimerRef.current);
+      restartListeningTimerRef.current = null;
+    }
+  }, []);
 
   // Keep ref in sync with state for use in callbacks
   useEffect(() => {
@@ -143,11 +151,12 @@ export function ConversationView({
     window.speechSynthesis?.addEventListener('voiceschanged', handleVoicesChanged);
 
     return () => {
+      clearRestartListeningTimer();
       stt.stop();
       tts.stop();
       window.speechSynthesis?.removeEventListener('voiceschanged', handleVoicesChanged);
     };
-  }, []);
+  }, [clearRestartListeningTimer]);
 
   /** Ref to startListening so flushPendingText can access it without circular deps */
   const startListeningRef = useRef<(() => void) | null>(null);
@@ -261,8 +270,12 @@ export function ConversationView({
           ttsRef.current.onEnd = (): void => {
             setAvatarState('ready');
             if (liveModeRef.current) {
-              setTimeout(() => {
-                startListeningRef.current?.();
+              clearRestartListeningTimer();
+              restartListeningTimerRef.current = setTimeout(() => {
+                restartListeningTimerRef.current = null;
+                if (liveModeRef.current) {
+                  startListeningRef.current?.();
+                }
               }, 300);
             }
           };
@@ -512,6 +525,8 @@ export function ConversationView({
       } else {
         setCaption('Could not hear you clearly. Please try again.');
       }
+      clearRestartListeningTimer();
+      liveModeRef.current = false;
       setLiveMode(false);
       setIsCaptionVisible(true);
       setAvatarState('ready');
@@ -530,16 +545,18 @@ export function ConversationView({
     setAvatarState('listening');
     setCaption('Listening...');
     setIsCaptionVisible(true);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- handleSendInternal is stable
+  }, [clearRestartListeningTimer]); // eslint-disable-line react-hooks/exhaustive-deps -- handleSendInternal is stable
 
   // Keep ref in sync so flushPendingText can call startListening without circular deps
   startListeningRef.current = startListening;
 
   /** FR37 — Stop avatar talking (barge-in). Stops TTS/STT and cancels agent. */
   function handleStopTalking(): void {
+    clearRestartListeningTimer();
     ttsRef.current?.stop();
     sttRef.current?.stop();
     pendingTextRef.current = '';
+    liveModeRef.current = false;
     setLiveMode(false);
     setAvatarState('ready');
     setCaption(null);
@@ -548,6 +565,7 @@ export function ConversationView({
   }
 
   function handleSendInternal(text: string): void {
+    clearRestartListeningTimer();
     sttRef.current?.stop();
     ttsRef.current?.stop();
     pendingTextRef.current = '';
@@ -638,7 +656,9 @@ export function ConversationView({
     if (stt === null) return;
 
     if (stt.isListening || liveMode) {
+      clearRestartListeningTimer();
       stt.stop();
+      liveModeRef.current = false;
       setLiveMode(false);
       setAvatarState('ready');
       setCaption(null);
@@ -646,6 +666,7 @@ export function ConversationView({
       return;
     }
 
+    liveModeRef.current = true;
     setLiveMode(true);
     startListening();
   }
