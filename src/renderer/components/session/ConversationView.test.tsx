@@ -907,7 +907,12 @@ describe('ConversationView', () => {
     });
     expect(screen.getByText('Platform')).toBeInTheDocument();
 
-    // 3. Questions with long document preamble (> 600 chars)
+    // 3. Questions with long document preamble (> 600 chars) after a tool-call (replaces task-progress panel)
+    simulateAgentEvent({
+      type: 'tool-call',
+      toolName: 'Read',
+      toolInput: { file_path: '/src/app.ts' },
+    });
     const longPreamble = `# Specification\n\n${'Detailed architectural context and background information. '.repeat(15)}`;
     simulateAgentEvent({
       type: 'text',
@@ -917,6 +922,22 @@ describe('ConversationView', () => {
       vi.advanceTimersByTime(600);
     });
     expect(screen.getByText('Auth')).toBeInTheDocument();
+    expect(screen.getByText(/# Specification/)).toBeInTheDocument();
+
+    // 3b. Standalone document response after tool-call replaces task-progress panel
+    simulateAgentEvent({
+      type: 'tool-call',
+      toolName: 'Read',
+      toolInput: { file_path: '/src/arch.ts' },
+    });
+    simulateAgentEvent({
+      type: 'text',
+      content: `# Architecture Overview\n\n${'Comprehensive system design details and module responsibilities. '.repeat(15)}`,
+    });
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(screen.getByText(/# Architecture Overview/)).toBeInTheDocument();
 
     // 4. Consecutive progress events + error clearing active timers
     simulateAgentEvent({ type: 'text', content: 'Buffered text' });

@@ -120,6 +120,7 @@ export class IpcSpeechStt implements SpeechToText {
         }
         return;
       }
+      this.mediaStream = stream;
 
       // Tell main process to start the recognizer
       await window.electronAPI.startAudioCapture();
@@ -127,9 +128,11 @@ export class IpcSpeechStt implements SpeechToText {
         for (const track of stream.getTracks()) {
           track.stop();
         }
+        if (this.mediaStream === stream) {
+          this.mediaStream = null;
+        }
         return;
       }
-      this.mediaStream = stream;
 
       // Set up AudioContext → ScriptProcessorNode → IPC pipeline
       this.audioContext = new AudioContext({ sampleRate: 16000 });

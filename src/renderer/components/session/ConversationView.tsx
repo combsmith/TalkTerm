@@ -210,6 +210,7 @@ export function ConversationView({
 
       // If preamble is long enough for a document, show it in DocumentView
       if (isDocumentContent(parsed.preamble)) {
+        displayMode.clear();
         setActiveDocument(parsed.preamble);
         setAvatarState('ready');
         setCaption(null);
@@ -229,6 +230,7 @@ export function ConversationView({
       const contentType = detectContentType(text);
       if (contentType === 'document') {
         pendingTextRef.current = '';
+        displayMode.clear();
         setActiveDocument(text);
         setAvatarState('ready');
         setCaption(null);

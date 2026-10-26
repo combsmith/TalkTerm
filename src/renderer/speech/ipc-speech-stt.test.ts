@@ -215,6 +215,7 @@ describe('IpcSpeechStt', () => {
     });
 
     stt.stop();
+    expect(mockTrackStop).toHaveBeenCalledTimes(1);
     resolveCapture();
     await Promise.resolve();
     await Promise.resolve();

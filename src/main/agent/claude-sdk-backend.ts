@@ -304,22 +304,42 @@ export class ClaudeSdkBackend implements AgentBackend {
   private async tryLoadBmadFromDir(
     dir: string,
   ): Promise<{ agent: string; config: string | null } | null> {
-    const agentPath = path.join(dir, '_bmad', 'bmm', 'agents', 'analyst.md');
+    const legacyAgentPath = path.join(dir, '_bmad', 'bmm', 'agents', 'analyst.md');
+    const skillAgentPath = path.join(
+      dir,
+      '_bmad',
+      'bmm',
+      '1-analysis',
+      'bmad-agent-analyst',
+      'SKILL.md',
+    );
     const configPath = path.join(dir, '_bmad', 'bmm', 'config.yaml');
 
-    const [agentResult, configResult] = await Promise.allSettled([
-      readFile(agentPath, 'utf-8'),
+    const [legacyResult, configResult] = await Promise.allSettled([
+      readFile(legacyAgentPath, 'utf-8'),
       readFile(configPath, 'utf-8'),
     ]);
 
-    if (agentResult.status === 'rejected') {
-      this.debugLog(`[SDK Debug] No BMAD agent at ${agentPath}`);
+    let agentContent: string | null =
+      legacyResult.status === 'fulfilled' ? legacyResult.value : null;
+    let resolvedAgentPath = legacyAgentPath;
+
+    if (agentContent === null) {
+      const [skillResult] = await Promise.allSettled([readFile(skillAgentPath, 'utf-8')]);
+      if (skillResult.status === 'fulfilled') {
+        agentContent = skillResult.value;
+        resolvedAgentPath = skillAgentPath;
+      }
+    }
+
+    if (agentContent === null) {
+      this.debugLog(`[SDK Debug] No BMAD agent at ${legacyAgentPath} or ${skillAgentPath}`);
       return null;
     }
 
-    this.debugLog(`[SDK Debug] Found BMAD agent at ${agentPath}`);
+    this.debugLog(`[SDK Debug] Found BMAD agent at ${resolvedAgentPath}`);
     return {
-      agent: agentResult.value,
+      agent: agentContent,
       config: configResult.status === 'fulfilled' ? configResult.value : null,
     };
   }

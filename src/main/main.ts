@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { app, BrowserWindow, dialog, safeStorage, session, shell } from 'electron';
 import { IPC_CHANNELS } from '../shared/types/domain/ipc-channels';
@@ -131,6 +132,7 @@ function bootstrap(): void {
   const envUserData = process.env['ELECTRON_USER_DATA_DIR'];
   const userDataDir =
     envUserData !== undefined && envUserData !== '' ? envUserData : app.getPath('userData');
+  fs.mkdirSync(userDataDir, { recursive: true });
   const dbPath = path.join(userDataDir, 'talkterm.db');
   const db = new BetterSqlite3(dbPath);
   db.pragma('journal_mode = WAL');

@@ -1239,6 +1239,22 @@ describe('ClaudeSdkBackend', () => {
       expect(context).toContain('/my/workspace/_bmad-output');
       expect(context).not.toContain('{project-root}');
     });
+
+    it('loads BMAD analyst definition from tracked bmad-agent-analyst/SKILL.md location when legacy analyst.md is absent', async () => {
+      const fsMock = await import('node:fs/promises');
+      vi.mocked(fsMock.readFile).mockImplementation((filePath: unknown) => {
+        const p = String(filePath);
+        if (p.includes('bmad-agent-analyst') && p.endsWith('SKILL.md')) {
+          return Promise.resolve('# Tracked Mary Analyst Skill');
+        }
+        return Promise.reject(new Error('ENOENT'));
+      });
+
+      const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
+      const context = await backend.loadBmadContext('/my/workspace');
+      expect(context).not.toBeNull();
+      expect(context).toContain('Tracked Mary Analyst Skill');
+    });
   });
 
   describe('debug logging', () => {
