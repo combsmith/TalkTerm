@@ -71,5 +71,13 @@ export class AgentIPCHandler implements IPCRegistrar {
       cancelRouterOperations(this.router);
       this.router.cancel();
     });
+
+    ipcMain.on(IPC_CHANNELS.AGENT_CONFIRM, (_event: unknown, approved: unknown) => {
+      if (typeof approved !== 'boolean') {
+        console.warn('[AgentIPC] Ignoring agent:confirm with non-boolean payload');
+        return;
+      }
+      this.router.respondToConfirmation(approved);
+    });
   }
 }

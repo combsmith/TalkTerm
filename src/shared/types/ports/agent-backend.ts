@@ -19,5 +19,10 @@ export interface AgentBackend {
     workspacePath?: string,
   ): AsyncIterable<AgentEvent> | Iterable<AgentEvent>;
   cancelCurrentAction(): void;
+  /**
+   * Resolve the pending tool-permission request (surfaced as a `confirm-request` event).
+   * No-op when no permission request is pending.
+   */
+  respondToConfirmation(approved: boolean): void;
   resumeSession(sessionId: string): AsyncIterable<AgentEvent> | Iterable<AgentEvent>;
 }

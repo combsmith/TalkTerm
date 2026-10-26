@@ -7,6 +7,8 @@ export interface ElectronAPI {
   // Agent
   sendAgentMessage: (sessionId: string, message: string) => Promise<void>;
   cancelAgent: () => void;
+  /** Approve or decline the pending tool-permission confirm-request */
+  respondToConfirmation: (approved: boolean) => void;
   onAgentEvent: (callback: (event: AgentEvent) => void) => () => void;
 
   // Session

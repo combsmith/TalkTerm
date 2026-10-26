@@ -10,10 +10,19 @@ import {
 type AuthChoice = 'none' | 'api-key' | 'claude-subscription';
 
 interface ApiKeySetupProps {
-  onValidated: (key: string) => void;
+  /** May return a promise; a rejection (e.g. secure storage unavailable) restores a retry state. */
+  onValidated: (key: string) => void | Promise<void>;
   onSubscriptionSelected: () => void;
   initialState?: 'empty' | 'expired';
   detectedEnvKey?: boolean;
+}
+
+const STORAGE_FAILURE_MESSAGE =
+  "Your key couldn't be saved securely on this device. Please try again, or use the Claude Pro/Max option.";
+
+function storageFailureMessage(err: unknown): string {
+  const detail = err instanceof Error && err.message !== '' ? ` (${err.message})` : '';
+  return `${STORAGE_FAILURE_MESSAGE}${detail}`;
 }
 
 export function ApiKeySetup({
@@ -24,6 +33,7 @@ export function ApiKeySetup({
 }: ApiKeySetupProps): ReactElement {
   const [authChoice, setAuthChoice] = useState<AuthChoice>('none');
   const [envKeyDeclined, setEnvKeyDeclined] = useState(false);
+  const [envKeyError, setEnvKeyError] = useState<string | null>(null);
   const [key, setKey] = useState('');
   const [isValid, setIsValid] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
@@ -47,7 +57,12 @@ export function ApiKeySetup({
   useEffect(() => {
     if (!isValid) return;
     const timer = setTimeout(() => {
-      onValidated(key);
+      Promise.resolve()
+        .then(() => onValidated(key))
+        .catch((err: unknown) => {
+          setIsValid(false);
+          setError(storageFailureMessage(err));
+        });
     }, 1000);
     return () => {
       clearTimeout(timer);
@@ -55,7 +70,12 @@ export function ApiKeySetup({
   }, [isValid, key, onValidated]);
 
   function handleUseEnvKey(): void {
-    onValidated('ENV_KEY');
+    setEnvKeyError(null);
+    Promise.resolve()
+      .then(() => onValidated('ENV_KEY'))
+      .catch((err: unknown) => {
+        setEnvKeyError(storageFailureMessage(err));
+      });
   }
 
   async function handleValidate(): Promise<void> {
@@ -134,6 +154,12 @@ export function ApiKeySetup({
               ANTHROPIC_API_KEY is already configured on this system.
             </p>
           </div>
+
+          {envKeyError !== null && (
+            <p className="text-center text-small text-danger" role="alert">
+              {envKeyError}
+            </p>
+          )}
 
           <button
             ref={autoFocusRef}

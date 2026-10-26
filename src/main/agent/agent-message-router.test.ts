@@ -43,6 +43,16 @@ describe('AgentMessageRouter', () => {
     expect(backend.cancelled).toBe(true);
   });
 
+  it('forwards confirmation decisions to the backend without queueing', () => {
+    const backend = new FakeAgentBackend();
+    const router = new AgentMessageRouter(backend);
+
+    router.respondToConfirmation(true);
+    router.respondToConfirmation(false);
+
+    expect(backend.confirmations).toEqual([true, false]);
+  });
+
   it('does not throw when no handler is set', async () => {
     const backend = new FakeAgentBackend();
     backend.queueEvents([{ type: 'text', content: 'Hello' }]);
@@ -78,6 +88,7 @@ describe('AgentMessageRouter', () => {
         yield { type: 'text' as const, content: 'Resumed' };
       },
       cancelCurrentAction: vi.fn(),
+      respondToConfirmation: vi.fn(),
     };
 
     const router = new AgentMessageRouter(backend);

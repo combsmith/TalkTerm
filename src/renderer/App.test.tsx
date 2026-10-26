@@ -241,6 +241,26 @@ describe('App', () => {
     expect(await screen.findByPlaceholderText(/speak to Mary/i)).toBeInTheDocument();
   });
 
+  it('surfaces secure-storage failures on the API key step instead of hanging', async () => {
+    const user = userEvent.setup();
+    vi.mocked(window.electronAPI.storeApiKey).mockRejectedValueOnce(
+      new Error('Encryption is not available'),
+    );
+
+    render(<App />);
+    passAdminCheck();
+
+    await user.click(screen.getByText(/Anthropic API Key/));
+    await user.type(screen.getByPlaceholderText('sk-ant-api03-...'), 'sk-ant-api03-abc{Enter}');
+
+    expect(
+      await screen.findByText(/couldn't be saved securely/i, {}, { timeout: 4000 }),
+    ).toBeInTheDocument();
+    // Still on the key step (not advanced to profile)
+    expect(screen.queryByText(/What should I call you/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /validate api key/i })).toBeEnabled();
+  }, 10000);
+
   it('skips setup wizard for returning users when assessLaunchState reports all steps complete', async () => {
     vi.mocked(window.electronAPI.assessLaunchState).mockResolvedValue({
       apiKeyValid: true,

@@ -58,6 +58,7 @@ vi.mock('../../speech/web-speech-tts', () => ({
 let agentEventCallback: ((event: AgentEvent) => void) | null = null;
 const mockSendAgentMessage = vi.fn().mockResolvedValue(undefined);
 const mockCancelAgent = vi.fn();
+const mockRespondToConfirmation = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -68,6 +69,7 @@ beforeEach(() => {
     value: {
       sendAgentMessage: mockSendAgentMessage,
       cancelAgent: mockCancelAgent,
+      respondToConfirmation: mockRespondToConfirmation,
       onAgentEvent: vi.fn((callback: (event: AgentEvent) => void) => {
         agentEventCallback = callback;
         return vi.fn(); // unsubscribe function
@@ -540,7 +542,7 @@ describe('ConversationView', () => {
     expect(screen.getByText('Cancel')).toBeInTheDocument();
   });
 
-  it('dismisses ConfirmPlan and cancels agent when Cancel clicked', async () => {
+  it('dismisses ConfirmPlan, denies the pending permission, and cancels agent when Cancel clicked', async () => {
     const user = userEvent.setup();
     render(<ConversationView userName="DJ" avatarName="Mary" sessionId="s1" />);
     simulateAgentEvent({
@@ -549,24 +551,27 @@ describe('ConversationView', () => {
       description: 'Delete dangerous thing',
     });
     await user.click(screen.getByText('Cancel'));
+    expect(mockRespondToConfirmation).toHaveBeenCalledWith(false);
     expect(mockCancelAgent).toHaveBeenCalled();
     expect(screen.queryByText('Approve')).not.toBeInTheDocument();
   });
 
-  it('dismisses ConfirmPlan and sends approved when Approve clicked', async () => {
+  it('approves the pending SDK permission (not a new chat turn) when Approve clicked', async () => {
     const user = userEvent.setup();
     render(<ConversationView userName="DJ" avatarName="Mary" sessionId="s1" />);
     simulateAgentEvent({
       type: 'confirm-request',
-      action: 'create-file',
-      description: 'Create new-file.ts',
+      action: 'Bash',
+      description: 'Bash: npm install',
     });
     await user.click(screen.getByText('Approve'));
-    expect(mockSendAgentMessage).toHaveBeenCalledWith('s1', 'approved');
+    expect(mockRespondToConfirmation).toHaveBeenCalledWith(true);
+    expect(mockSendAgentMessage).not.toHaveBeenCalled();
     expect(screen.queryByText('Approve')).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/avatar is thinking/i)).toBeInTheDocument();
   });
 
-  it('dismisses ConfirmPlan and prompts modification when Modify clicked', async () => {
+  it('declines the pending permission and prompts modification when Modify clicked', async () => {
     const user = userEvent.setup();
     render(<ConversationView userName="DJ" avatarName="Mary" sessionId="s1" />);
     simulateAgentEvent({
@@ -575,7 +580,9 @@ describe('ConversationView', () => {
       description: 'Rename old.ts to new.ts',
     });
     await user.click(screen.getByText('Modify'));
+    expect(mockRespondToConfirmation).toHaveBeenCalledWith(false);
     expect(screen.queryByText('Rename old.ts to new.ts')).not.toBeInTheDocument();
+    expect(screen.getByText('What would you like to change?')).toBeInTheDocument();
   });
 
   // Story 3.1 — TaskProgress wired to agent events
@@ -767,6 +774,35 @@ describe('ConversationView', () => {
     expect(mockSendAgentMessage).not.toHaveBeenCalled();
     expect(screen.getByText('iOS and Android')).toBeInTheDocument();
     expect(screen.getByText('Q3 2026')).toBeInTheDocument();
+  });
+
+  it('clears an obsolete question stack when the user sends a new message via the main input', async () => {
+    const user = userEvent.setup();
+    render(<ConversationView userName="DJ" avatarName="Mary" sessionId="s1" />);
+
+    simulateTextAndFlush(
+      'Two questions:\n1. **Platform** — Which platform?\n2. **Timeline** — When do you need it?',
+    );
+    expect(screen.getByTestId('question-card-stack')).toBeInTheDocument();
+
+    // Bypass the questionnaire with a typed follow-up
+    await user.type(screen.getByPlaceholderText(/speak to Mary/i), 'Actually, skip that{Enter}');
+    expect(mockSendAgentMessage).toHaveBeenCalledWith('s1', 'Actually, skip that');
+    expect(screen.queryByTestId('question-card-stack')).not.toBeInTheDocument();
+
+    // Agent replies with plain text; later voice input must go to the agent, not the old stack
+    simulateTextAndFlush('Sure, no problem.');
+    act(() => {
+      mockTtsInstance.onEnd?.();
+    });
+    act(() => {
+      screen.getByRole('button', { name: /start recording/i }).click();
+    });
+    act(() => {
+      mockSttInstance.onResult?.({ transcript: 'Build me a web app', isFinal: true });
+    });
+    expect(mockSendAgentMessage).toHaveBeenLastCalledWith('s1', 'Build me a web app');
+    expect(screen.queryByTestId('question-card-stack')).not.toBeInTheDocument();
   });
 
   it('finalizes displayed tool progress steps when completed progress or complete event arrives', () => {

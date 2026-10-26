@@ -43,6 +43,32 @@ interface SdkQueryOptions {
   env?: Record<string, string | undefined> | undefined;
   forceLoginMethod?: 'claudeai' | 'console' | undefined;
   promptSuggestions?: boolean | undefined;
+  /** Permission callback invoked by the SDK before running a tool that is not pre-approved. */
+  canUseTool?: SdkCanUseTool | undefined;
+}
+
+type SdkPermissionResult =
+  | { behavior: 'allow'; updatedInput: Record<string, unknown> }
+  | { behavior: 'deny'; message: string; interrupt?: boolean };
+
+type SdkCanUseTool = (
+  toolName: string,
+  input: Record<string, unknown>,
+  options: { signal: AbortSignal },
+) => Promise<SdkPermissionResult>;
+
+interface PendingPermission {
+  input: Record<string, unknown>;
+  resolve: (result: SdkPermissionResult) => void;
+}
+
+/** Build a human-readable description of a tool request for the confirm prompt. */
+function describeToolRequest(toolName: string, input: Record<string, unknown>): string {
+  const filePath = input['file_path'];
+  const command = input['command'];
+  const target =
+    typeof filePath === 'string' ? filePath : typeof command === 'string' ? command : toolName;
+  return `${toolName}: ${target}`;
 }
 
 /**
@@ -160,6 +186,12 @@ export class ClaudeSdkBackend implements AgentBackend {
   private lastTurnError = '';
   private readonly sessionHistory = new Map<string, ConversationTurn[]>();
   private readonly sdkSessionIds = new Map<string, string>();
+  /** Tool-permission request awaiting a user decision via respondToConfirmation(). */
+  private pendingPermission: PendingPermission | null = null;
+  /** Events raised outside the SDK message stream (e.g. permission prompts) awaiting delivery. */
+  private readonly injectedEvents: AgentEvent[] = [];
+  /** Wakes consumeSdkStream when an injected event arrives while it awaits the SDK. */
+  private wakeConsumer: (() => void) | null = null;
 
   constructor(
     private readonly auditRepo: AuditRepository,
@@ -250,12 +282,54 @@ export class ClaudeSdkBackend implements AgentBackend {
   }
 
   cancelCurrentAction(): void {
+    this.respondToConfirmation(false);
     this.abortController?.abort();
     // Fire-and-forget interrupt on the active query — ignore if already completed
     this.activeQuery?.interrupt().catch((err: unknown) => {
       console.debug('[SDK] Query interrupt failed (likely already completed):', err);
     });
   }
+
+  respondToConfirmation(approved: boolean): void {
+    const pending = this.pendingPermission;
+    if (pending === null) return;
+    this.pendingPermission = null;
+    pending.resolve(
+      approved
+        ? { behavior: 'allow', updatedInput: pending.input }
+        : { behavior: 'deny', message: 'The user declined this action.', interrupt: true },
+    );
+  }
+
+  /**
+   * SDK permission callback: surfaces a confirm-request to the UI and waits for the
+   * user's decision (delivered through respondToConfirmation) before the tool runs.
+   */
+  private readonly canUseTool: SdkCanUseTool = (toolName, input, { signal }) =>
+    new Promise<SdkPermissionResult>((resolve) => {
+      if (signal.aborted) {
+        resolve({ behavior: 'deny', message: 'Request was cancelled.', interrupt: true });
+        return;
+      }
+      // Only one prompt can be shown at a time — supersede any stale request.
+      this.respondToConfirmation(false);
+      this.pendingPermission = { input, resolve };
+      signal.addEventListener(
+        'abort',
+        () => {
+          if (this.pendingPermission?.resolve === resolve) {
+            this.respondToConfirmation(false);
+          }
+        },
+        { once: true },
+      );
+      this.injectedEvents.push({
+        type: 'confirm-request',
+        action: toolName,
+        description: describeToolRequest(toolName, input),
+      });
+      this.wakeConsumer?.();
+    });
 
   // eslint-disable-next-line @typescript-eslint/require-await -- will be async when resume uses SDK
   async *resumeSession(sessionId: string): AsyncIterable<AgentEvent> {
@@ -463,6 +537,7 @@ export class ClaudeSdkBackend implements AgentBackend {
       permissionMode: 'default',
       allowedTools: ['Read', 'Glob', 'Grep', 'LS'],
       promptSuggestions: true,
+      canUseTool: this.canUseTool,
       ...overrides,
     };
     if (this.getAuthMode() === 'claude-subscription') {
@@ -521,7 +596,6 @@ export class ClaudeSdkBackend implements AgentBackend {
     }
     const history = this.sessionHistory.get(sessionId);
     const hasPriorTurns = (history !== undefined && history.length > 1) || persistedSdkId !== null;
-    const isApproved = message.trim().toLowerCase() === 'approved';
     let resumeFailed = false;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -537,7 +611,6 @@ export class ClaudeSdkBackend implements AgentBackend {
           maxBudgetUsd: 1.0,
           continue: useContinue,
           ...(persistedSdkId !== null && !resumeFailed ? { resume: persistedSdkId } : {}),
-          ...(isApproved ? { permissionMode: 'acceptEdits', allowedTools: undefined } : {}),
         },
         bmadContext,
       );
@@ -609,8 +682,32 @@ export class ClaudeSdkBackend implements AgentBackend {
     queryStream: AsyncGenerator<SdkMessage, void>,
     sessionId: string,
   ): AsyncIterable<AgentEvent> {
+    // Manual iteration (instead of for-await) so permission prompts raised by canUseTool
+    // can be delivered while the SDK stream is blocked waiting on the user's decision.
+    const iterator = queryStream[Symbol.asyncIterator]();
+    let nextMessage: Promise<IteratorResult<SdkMessage, void>> | null = null;
     try {
-      for await (const msg of queryStream) {
+      nextMessage = iterator.next();
+      for (;;) {
+        // Deliver events raised outside the SDK stream (permission prompts) first.
+        let injected = this.injectedEvents.shift();
+        while (injected !== undefined) {
+          yield injected;
+          injected = this.injectedEvents.shift();
+        }
+
+        const woken = new Promise<'woken'>((resolve) => {
+          this.wakeConsumer = (): void => {
+            resolve('woken');
+          };
+        });
+        const result = await Promise.race([nextMessage, woken]);
+        this.wakeConsumer = null;
+        if (result === 'woken') continue;
+        if (result.done === true) break;
+        nextMessage = iterator.next();
+        const msg = result.value;
+
         if (this.abortController?.signal.aborted === true) {
           yield { type: 'complete', summary: 'Cancelled by user' };
           return;
@@ -649,6 +746,12 @@ export class ClaudeSdkBackend implements AgentBackend {
         userMessage: createUserFriendlyMessage(category),
         recoveryOptions: recoveryOptionsForCategory(category),
       };
+    } finally {
+      this.wakeConsumer = null;
+      // Avoid unhandled rejections from a prefetched message and close the SDK stream
+      // when the consumer stops early (cancel, retry).
+      nextMessage?.catch(() => undefined);
+      iterator.return(undefined).catch(() => undefined);
     }
   }
 
@@ -720,30 +823,10 @@ export class ClaudeSdkBackend implements AgentBackend {
       return [{ type: 'text', content: textBlock.text }];
     }
     if (block.type === 'tool_use') {
+      // Approval for write/execute tools is requested via the SDK canUseTool callback,
+      // which blocks the tool until the user responds — no confirm prompt is emitted here.
       const toolBlock = block as { type: 'tool_use'; name: string; input: Record<string, unknown> };
-      const toolCallEvent: AgentEvent = {
-        type: 'tool-call',
-        toolName: toolBlock.name,
-        toolInput: toolBlock.input,
-      };
-      const confirmTools = new Set(['Write', 'Edit', 'MultiEdit', 'Bash', 'Delete']);
-      if (confirmTools.has(toolBlock.name)) {
-        const target =
-          typeof toolBlock.input['file_path'] === 'string'
-            ? toolBlock.input['file_path']
-            : typeof toolBlock.input['command'] === 'string'
-              ? toolBlock.input['command']
-              : toolBlock.name;
-        return [
-          toolCallEvent,
-          {
-            type: 'confirm-request',
-            action: toolBlock.name,
-            description: `${toolBlock.name}: ${target}`,
-          },
-        ];
-      }
-      return [toolCallEvent];
+      return [{ type: 'tool-call', toolName: toolBlock.name, toolInput: toolBlock.input }];
     }
     if (block.type === 'thinking') {
       const thinkBlock = block as { type: 'thinking'; thinking: string };

@@ -37,6 +37,16 @@ export class FakeAgentBackend implements AgentBackend {
     this._cancelled = true;
   }
 
+  private readonly _confirmations: boolean[] = [];
+
+  get confirmations(): readonly boolean[] {
+    return this._confirmations;
+  }
+
+  respondToConfirmation(approved: boolean): void {
+    this._confirmations.push(approved);
+  }
+
   *resumeSession(_sessionId: string): Iterable<AgentEvent> {
     this._cancelled = false;
     for (const event of this.events) {

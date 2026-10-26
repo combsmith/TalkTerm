@@ -163,18 +163,16 @@ export function App(): ReactElement | null {
       return (
         <ApiKeySetup
           detectedEnvKey={envKeyDetected}
-          onValidated={(key: string) => {
-            void Promise.all([
+          onValidated={(key: string) =>
+            // Propagate storage failures (e.g. OS encryption unavailable) back to ApiKeySetup
+            // so it can show an actionable error instead of waiting indefinitely.
+            Promise.all([
               window.electronAPI.storeApiKey(key),
               window.electronAPI.setAuthMode('api-key'),
-            ])
-              .then(() => {
-                completeCurrentStep();
-              })
-              .catch(() => {
-                // Setup IPC failure — proceed anyway; key is validated client-side
-              });
-          }}
+            ]).then(() => {
+              completeCurrentStep();
+            })
+          }
           onSubscriptionSelected={() => {
             void window.electronAPI
               .setAuthMode('claude-subscription')

@@ -1372,7 +1372,7 @@ describe('ClaudeSdkBackend', () => {
       delete process.env['TALKTERM_DEBUG_SDK'];
     });
 
-    it('emits confirm-request for write/execute tools, enables acceptEdits on approved turns, and skips retry after tool activity', async () => {
+    it('does not emit confirm-request from tool_use blocks, keeps default permissions on "approved" text, and skips retry after tool activity', async () => {
       const sdkMock = mockSdkModule([
         {
           type: 'assistant',
@@ -1400,15 +1400,215 @@ describe('ClaudeSdkBackend', () => {
       const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
       const events = await collectEvents(backend.sendMessage('sess-42', 'create app.ts'));
 
-      // Should emit confirm-request for Write tool
-      expect(events.some((e) => e.type === 'confirm-request' && e.action === 'Write')).toBe(true);
+      expect(events.some((e) => e.type === 'tool-call' && e.toolName === 'Write')).toBe(true);
+      // Approval is requested via canUseTool, never inferred from the tool_use block
+      expect(events.some((e) => e.type === 'confirm-request')).toBe(false);
       // Should NOT retry because tool activity already occurred
       expect(sdkMock.query).toHaveBeenCalledTimes(1);
 
-      // Approved turn should enable acceptEdits
+      // Sending the text "approved" must not silently widen permissions
       await collectEvents(backend.sendMessage('sess-42', 'approved'));
-      const approvedCall = sdkMock.query.mock.calls[1] as [{ options: { permissionMode: string } }];
-      expect(approvedCall[0].options.permissionMode).toBe('acceptEdits');
+      const approvedCall = sdkMock.query.mock.calls[1] as [
+        { options: { permissionMode: string; allowedTools?: string[]; canUseTool?: unknown } },
+      ];
+      expect(approvedCall[0].options.permissionMode).toBe('default');
+      expect(approvedCall[0].options.allowedTools).toEqual(['Read', 'Glob', 'Grep', 'LS']);
+      expect(typeof approvedCall[0].options.canUseTool).toBe('function');
+    });
+
+    describe('tool permission bridge (canUseTool)', () => {
+      type PermissionResult =
+        | { behavior: 'allow'; updatedInput: Record<string, unknown> }
+        | { behavior: 'deny'; message: string; interrupt?: boolean };
+      type CanUseToolFn = (
+        toolName: string,
+        input: Record<string, unknown>,
+        options: { signal: AbortSignal },
+      ) => Promise<PermissionResult>;
+
+      /** SDK mock whose stream blocks on canUseTool, then reports the decision. */
+      function installPermissionSdk(signal: AbortSignal = new AbortController().signal): {
+        decisions: PermissionResult[];
+        query: ReturnType<typeof vi.fn>;
+      } {
+        const decisions: PermissionResult[] = [];
+        const querySpy = vi
+          .fn()
+          .mockImplementation((params: { options: { canUseTool: CanUseToolFn } }) => {
+            async function* gen(): AsyncGenerator<Record<string, unknown>, void> {
+              yield {
+                type: 'assistant',
+                message: {
+                  content: [
+                    {
+                      type: 'tool_use',
+                      id: 'tu-1',
+                      name: 'Bash',
+                      input: { command: 'npm install' },
+                    },
+                  ],
+                },
+                session_id: 'sdk-perm',
+              };
+              const decision = await params.options.canUseTool(
+                'Bash',
+                { command: 'npm install' },
+                { signal },
+              );
+              decisions.push(decision);
+              yield {
+                type: 'result',
+                subtype: 'success',
+                result: decision.behavior === 'allow' ? 'Installed' : 'Declined',
+                total_cost_usd: 0,
+                num_turns: 1,
+                session_id: 'sdk-perm',
+              };
+            }
+            const g = gen() as AsyncGenerator<Record<string, unknown>, void> & {
+              interrupt: () => Promise<void>;
+            };
+            g.interrupt = vi.fn().mockResolvedValue(undefined);
+            return g;
+          });
+        installSdkMock({ query: querySpy });
+        return { decisions, query: querySpy };
+      }
+
+      it('surfaces a confirm-request while the tool is blocked and allows it on approval', async () => {
+        const { decisions } = installPermissionSdk();
+        const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
+
+        const events: AgentEvent[] = [];
+        for await (const event of backend.sendMessage('sess-perm', 'install deps')) {
+          events.push(event);
+          if (event.type === 'confirm-request') {
+            backend.respondToConfirmation(true);
+          }
+        }
+
+        expect(events).toContainEqual({
+          type: 'confirm-request',
+          action: 'Bash',
+          description: 'Bash: npm install',
+        });
+        expect(decisions).toEqual([
+          { behavior: 'allow', updatedInput: { command: 'npm install' } },
+        ]);
+        expect(events.at(-1)).toEqual({ type: 'complete', summary: 'Installed' });
+      });
+
+      it('denies the tool and interrupts when the user declines', async () => {
+        const { decisions } = installPermissionSdk();
+        const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
+
+        for await (const event of backend.sendMessage('sess-perm', 'install deps')) {
+          if (event.type === 'confirm-request') {
+            backend.respondToConfirmation(false);
+          }
+        }
+
+        expect(decisions).toEqual([
+          { behavior: 'deny', message: 'The user declined this action.', interrupt: true },
+        ]);
+      });
+
+      it('denies a pending permission when the action is cancelled', async () => {
+        const { decisions } = installPermissionSdk();
+        const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
+
+        const events: AgentEvent[] = [];
+        for await (const event of backend.sendMessage('sess-perm', 'install deps')) {
+          events.push(event);
+          if (event.type === 'confirm-request') {
+            backend.cancelCurrentAction();
+          }
+        }
+
+        expect(decisions[0]?.behavior).toBe('deny');
+        expect(events.at(-1)).toEqual({ type: 'complete', summary: 'Cancelled by user' });
+      });
+
+      it('denies immediately when the SDK signal is already aborted', async () => {
+        const controller = new AbortController();
+        controller.abort();
+        const { decisions } = installPermissionSdk(controller.signal);
+        const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
+
+        const events = await collectEvents(backend.sendMessage('sess-perm', 'install deps'));
+
+        expect(events.some((e) => e.type === 'confirm-request')).toBe(false);
+        expect(decisions).toEqual([
+          { behavior: 'deny', message: 'Request was cancelled.', interrupt: true },
+        ]);
+      });
+
+      it('denies the pending permission when the SDK aborts the request', async () => {
+        const controller = new AbortController();
+        const { decisions } = installPermissionSdk(controller.signal);
+        const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
+
+        for await (const event of backend.sendMessage('sess-perm', 'install deps')) {
+          if (event.type === 'confirm-request') {
+            controller.abort();
+          }
+        }
+
+        expect(decisions).toEqual([
+          { behavior: 'deny', message: 'The user declined this action.', interrupt: true },
+        ]);
+      });
+
+      it('respondToConfirmation is a no-op when nothing is pending', () => {
+        const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
+        expect(() => {
+          backend.respondToConfirmation(true);
+        }).not.toThrow();
+      });
+
+      it('describes file-based and unnamed tool requests', async () => {
+        const querySpy = vi
+          .fn()
+          .mockImplementation((params: { options: { canUseTool: CanUseToolFn } }) => {
+            async function* gen(): AsyncGenerator<Record<string, unknown>, void> {
+              await params.options.canUseTool(
+                'Write',
+                { file_path: '/src/a.ts' },
+                { signal: new AbortController().signal },
+              );
+              await params.options.canUseTool(
+                'Delete',
+                {},
+                { signal: new AbortController().signal },
+              );
+              yield {
+                type: 'result',
+                subtype: 'success',
+                result: 'ok',
+                total_cost_usd: 0,
+                num_turns: 1,
+                session_id: 'sdk-d',
+              };
+            }
+            const g = gen() as AsyncGenerator<Record<string, unknown>, void> & {
+              interrupt: () => Promise<void>;
+            };
+            g.interrupt = vi.fn().mockResolvedValue(undefined);
+            return g;
+          });
+        installSdkMock({ query: querySpy });
+        const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
+
+        const descriptions: string[] = [];
+        for await (const event of backend.sendMessage('sess-d', 'go')) {
+          if (event.type === 'confirm-request') {
+            descriptions.push(event.description);
+            backend.respondToConfirmation(true);
+          }
+        }
+
+        expect(descriptions).toEqual(['Write: /src/a.ts', 'Delete: Delete']);
+      });
     });
 
     it('does not retry on error_max_budget_usd', async () => {

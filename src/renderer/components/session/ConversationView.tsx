@@ -602,6 +602,11 @@ export function ConversationView({
     setAvatarState('thinking');
     setInputValue('');
     setActiveError(null);
+    // A new turn supersedes any open question stack — otherwise later voice input
+    // would be routed into the obsolete questionnaire instead of the agent.
+    activeQuestionSetRef.current = null;
+    setActiveQuestionSet(null);
+    setSpokenQuestionAnswer(null);
     displayMode.clear();
 
     window.electronAPI.sendAgentMessage(sessionId, text).catch(() => {
@@ -628,18 +633,23 @@ export function ConversationView({
     setActiveQuestionSet(null);
   }
 
-  /** Handle confirmation for destructive actions (ConfirmPlan) */
+  /** Handle confirmation for destructive actions (ConfirmPlan) — resolves the pending SDK permission */
   function handleConfirmApprove(): void {
     setPendingConfirm(null);
-    handleSendInternal('approved');
+    window.electronAPI.respondToConfirmation(true);
+    setAvatarState('thinking');
+    setCaption(null);
+    setIsCaptionVisible(false);
   }
   function handleConfirmModify(): void {
     setPendingConfirm(null);
+    window.electronAPI.respondToConfirmation(false);
     setCaption('What would you like to change?');
     setIsCaptionVisible(true);
   }
   function handleConfirmCancel(): void {
     setPendingConfirm(null);
+    window.electronAPI.respondToConfirmation(false);
     window.electronAPI.cancelAgent();
     setCaption('Action cancelled.');
     setIsCaptionVisible(true);

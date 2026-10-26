@@ -14,6 +14,7 @@ function createMockRouter(): AgentMessageRouter {
     startSession: vi.fn().mockResolvedValue(undefined),
     sendMessage: vi.fn().mockResolvedValue(undefined),
     cancel: vi.fn(),
+    respondToConfirmation: vi.fn(),
     resumeSession: vi.fn().mockResolvedValue(undefined),
   } as unknown as AgentMessageRouter;
 }
@@ -226,6 +227,32 @@ describe('AgentIPCHandler', () => {
     cancelHandler?.({});
 
     expect(router.cancel).toHaveBeenCalled();
+  });
+
+  it('forwards agent:confirm decisions to router.respondToConfirmation', () => {
+    const router = createMockRouter();
+    const handler = new AgentIPCHandler(router, () => createMockWebContents());
+    handler.register(ipcMain);
+
+    const confirmHandler = listeners.get(IPC_CHANNELS.AGENT_CONFIRM);
+    confirmHandler?.({}, true);
+    confirmHandler?.({}, false);
+
+    expect(router.respondToConfirmation).toHaveBeenNthCalledWith(1, true);
+    expect(router.respondToConfirmation).toHaveBeenNthCalledWith(2, false);
+  });
+
+  it('ignores agent:confirm with a non-boolean payload', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const router = createMockRouter();
+    const handler = new AgentIPCHandler(router, () => createMockWebContents());
+    handler.register(ipcMain);
+
+    listeners.get(IPC_CHANNELS.AGENT_CONFIRM)?.({}, 'yes');
+
+    expect(router.respondToConfirmation).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 
   it('serializes concurrent agent:action requests for the same session', async () => {

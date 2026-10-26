@@ -203,9 +203,65 @@ describe('ApiKeySetup', () => {
 
       delete (window as { electronAPI?: unknown }).electronAPI;
     }, 10000);
+
+    it('restores an actionable retry state when secure key storage fails', async () => {
+      const onValidated = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('Encryption is not available'))
+        .mockResolvedValueOnce(undefined);
+      render(<ApiKeySetup {...defaultProps} onValidated={onValidated} />);
+      const user = await navigateToApiKeyEntry();
+
+      await user.type(
+        screen.getByPlaceholderText('sk-ant-api03-...'),
+        'sk-ant-api03-test-key{Enter}',
+      );
+
+      await waitFor(
+        () => {
+          expect(screen.getByText(/couldn't be saved securely/i)).toBeInTheDocument();
+        },
+        { timeout: 3000 },
+      );
+      expect(screen.getByText(/Encryption is not available/)).toBeInTheDocument();
+      expect(screen.queryByText(/continuing/i)).not.toBeInTheDocument();
+
+      // User can retry from the restored state
+      const retryBtn = screen.getByRole('button', { name: /validate api key/i });
+      expect(retryBtn).toBeEnabled();
+      await user.click(retryBtn);
+      await waitFor(
+        () => {
+          expect(onValidated).toHaveBeenCalledTimes(2);
+        },
+        { timeout: 3000 },
+      );
+    }, 10000);
   });
 
   describe('env key detected', () => {
+    it('shows an error and stays on the env key screen when storing the env key choice fails', async () => {
+      const onValidated = vi.fn().mockRejectedValueOnce(new Error('Keychain locked'));
+      const user = userEvent.setup();
+      render(<ApiKeySetup {...defaultProps} onValidated={onValidated} detectedEnvKey={true} />);
+      await user.click(screen.getByRole('button', { name: /use existing key/i }));
+      expect(await screen.findByRole('alert')).toHaveTextContent(/couldn't be saved securely/i);
+      expect(screen.getByText(/Keychain locked/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /use existing key/i })).toBeInTheDocument();
+    });
+
+    it('shows a generic storage error when the failure has no message', async () => {
+      const onValidated = vi.fn().mockRejectedValueOnce('nope');
+      const user = userEvent.setup();
+      render(<ApiKeySetup {...defaultProps} onValidated={onValidated} detectedEnvKey={true} />);
+      await user.click(screen.getByRole('button', { name: /use existing key/i }));
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        /couldn't be saved securely on this device\. Please try again, or use the Claude Pro\/Max option\.$/,
+      );
+    });
+  });
+
+  describe('env key detected (defaults)', () => {
     it('shows env key detected screen', () => {
       render(<ApiKeySetup {...defaultProps} detectedEnvKey={true} />);
       expect(screen.getByText(/found an existing api key/i)).toBeInTheDocument();

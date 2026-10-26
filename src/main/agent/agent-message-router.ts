@@ -52,6 +52,11 @@ export class AgentMessageRouter {
     this.backend.cancelCurrentAction();
   }
 
+  /** Forward a confirm-request decision straight to the backend (bypasses the turn queue). */
+  respondToConfirmation(approved: boolean): void {
+    this.backend.respondToConfirmation(approved);
+  }
+
   resumeSession(sessionId: string): Promise<void> {
     return this.runSerialized(async () => {
       for await (const event of this.backend.resumeSession(sessionId)) {

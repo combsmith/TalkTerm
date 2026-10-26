@@ -3,12 +3,13 @@
 export const IPC_CHANNELS = {
   AGENT_MESSAGE: 'agent:message',
   AGENT_ERROR: 'agent:error',
-  AGENT_CONFIRM: 'agent:confirm',
   SESSION_UPDATED: 'session:updated',
 
   // Renderer → Main (invoke/request)
   AGENT_ACTION: 'agent:action',
   AGENT_CANCEL: 'agent:cancel',
+  /** User decision (approve/decline) for a pending tool-permission confirm-request */
+  AGENT_CONFIRM: 'agent:confirm',
   SESSION_START: 'session:start',
   SESSION_RESUME: 'session:resume',
   SETTINGS_GET: 'settings:get',

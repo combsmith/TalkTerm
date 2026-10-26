@@ -8,6 +8,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   cancelAgent: (): void => {
     ipcRenderer.send(IPC_CHANNELS.AGENT_CANCEL);
   },
+  respondToConfirmation: (approved: boolean): void => {
+    ipcRenderer.send(IPC_CHANNELS.AGENT_CONFIRM, approved);
+  },
   onAgentEvent: (callback: (event: unknown) => void): (() => void) => {
     const handler = (_ipcEvent: unknown, data: unknown): void => {
       callback(data);
