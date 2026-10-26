@@ -6,6 +6,7 @@ export type AgentEventHandler = (event: AgentEvent) => void;
 export class AgentMessageRouter {
   private handler: AgentEventHandler | null = null;
   private activeQueue: Promise<void> | null = null;
+  private cancelGeneration = 0;
 
   constructor(private readonly backend: AgentBackend) {}
 
@@ -35,7 +36,11 @@ export class AgentMessageRouter {
   }
 
   sendMessage(sessionId: string, message: string, workspacePath?: string): Promise<void> {
+    const gen = this.cancelGeneration;
     return this.runSerialized(async () => {
+      if (this.cancelGeneration !== gen) {
+        return;
+      }
       for await (const event of this.backend.sendMessage(sessionId, message, workspacePath)) {
         this.handler?.(event);
       }
@@ -43,6 +48,7 @@ export class AgentMessageRouter {
   }
 
   cancel(): void {
+    this.cancelGeneration++;
     this.backend.cancelCurrentAction();
   }
 

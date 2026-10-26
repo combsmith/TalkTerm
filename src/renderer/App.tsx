@@ -164,9 +164,10 @@ export function App(): ReactElement | null {
         <ApiKeySetup
           detectedEnvKey={envKeyDetected}
           onValidated={(key: string) => {
-            const storePromise =
-              key === 'ENV_KEY' ? Promise.resolve() : window.electronAPI.storeApiKey(key);
-            void Promise.all([storePromise, window.electronAPI.setAuthMode('api-key')])
+            void Promise.all([
+              window.electronAPI.storeApiKey(key),
+              window.electronAPI.setAuthMode('api-key'),
+            ])
               .then(() => {
                 completeCurrentStep();
               })

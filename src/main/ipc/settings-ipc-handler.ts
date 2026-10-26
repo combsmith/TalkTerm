@@ -46,6 +46,10 @@ export class SettingsIPCHandler implements IPCRegistrar {
 
     ipcMain.handle(IPC_CHANNELS.SETTINGS_STORE_KEY, (_event: unknown, key: unknown) => {
       const validKey = validateString(key, 'API key');
+      if (validKey === 'ENV_KEY') {
+        this.keyManager.deleteKey();
+        return;
+      }
       this.keyManager.storeKey(validKey);
     });
 

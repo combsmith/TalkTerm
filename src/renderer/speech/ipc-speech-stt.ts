@@ -18,6 +18,8 @@ export class IpcSpeechStt implements SpeechToText {
   private unsubResult: (() => void) | null = null;
   private unsubError: (() => void) | null = null;
   private unsubEnd: (() => void) | null = null;
+  private pendingStopPromise: Promise<void> | null = null;
+  private mainCaptureActive = false;
 
   onResult: ((result: SpeechToTextResult) => void) | null = null;
   onError: ((error: Error) => void) | null = null;
@@ -30,16 +32,21 @@ export class IpcSpeechStt implements SpeechToText {
   start(): void {
     if (this._isListening) return;
     this._isListening = true;
+    this.mainCaptureActive = false;
+    const generation = ++this.captureGeneration;
 
     // Subscribe to IPC results from main process
     this.unsubResult = window.electronAPI.onAudioResult((result) => {
+      if (!this.isGenerationActive(generation)) return;
       this.onResult?.(result);
     });
     this.unsubError = window.electronAPI.onAudioError((error) => {
+      if (!this.isGenerationActive(generation)) return;
       this.onError?.(new Error(error));
       this.stop();
     });
     this.unsubEnd = window.electronAPI.onAudioEnd(() => {
+      if (!this.mainCaptureActive || !this.isGenerationActive(generation)) return;
       this._isListening = false;
       this.captureGeneration++;
       this.teardownCapture();
@@ -47,7 +54,6 @@ export class IpcSpeechStt implements SpeechToText {
     });
 
     // Start audio capture and IPC streaming
-    const generation = ++this.captureGeneration;
     void this.startCapture(generation);
   }
 
@@ -64,11 +70,20 @@ export class IpcSpeechStt implements SpeechToText {
     this.captureGeneration++;
     this.teardownCapture();
 
-    // Tell main process to stop
-    void window.electronAPI.stopAudioCapture();
+    // Tell main process to stop and track completion so a rapid restart ignores stale AUDIO_END
+    const stopPromise = Promise.resolve(window.electronAPI.stopAudioCapture()).catch(
+      () => undefined,
+    );
+    const tracked = stopPromise.finally(() => {
+      if (this.pendingStopPromise === tracked) {
+        this.pendingStopPromise = null;
+      }
+    });
+    this.pendingStopPromise = tracked;
   }
 
   private teardownCapture(): void {
+    this.mainCaptureActive = false;
     // Stop audio capture
     if (this.processorNode !== null) {
       /* eslint-disable @typescript-eslint/no-deprecated -- ScriptProcessorNode cleanup */
@@ -122,7 +137,21 @@ export class IpcSpeechStt implements SpeechToText {
       }
       this.mediaStream = stream;
 
+      if (this.pendingStopPromise !== null) {
+        await this.pendingStopPromise;
+        if (!this.isGenerationActive(generation)) {
+          for (const track of stream.getTracks()) {
+            track.stop();
+          }
+          if (this.mediaStream === stream) {
+            this.mediaStream = null;
+          }
+          return;
+        }
+      }
+
       // Tell main process to start the recognizer
+      this.mainCaptureActive = true;
       await window.electronAPI.startAudioCapture();
       if (!this.isGenerationActive(generation)) {
         for (const track of stream.getTracks()) {

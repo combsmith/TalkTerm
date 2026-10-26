@@ -279,4 +279,43 @@ describe('IpcSpeechStt', () => {
     await Promise.resolve();
     expect(onError2).not.toHaveBeenCalled();
   });
+
+  it('ignores delayed AUDIO_END from a previous stop when capture is restarted before stopAudioCapture settles', async () => {
+    let resolveStop!: () => void;
+    mockStopAudioCapture.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveStop = resolve;
+      }),
+    );
+
+    const stt = new IpcSpeechStt();
+    stt.start();
+    await vi.waitFor(() => {
+      expect(mockProcessorConnect).toHaveBeenCalledTimes(1);
+    });
+
+    mockTrackStop.mockClear();
+    stt.stop();
+    expect(mockTrackStop).toHaveBeenCalledTimes(1);
+
+    // Immediately restart before stopAudioCapture resolves
+    mockTrackStop.mockClear();
+    stt.start();
+    await vi.waitFor(() => {
+      expect(mockGetUserMedia).toHaveBeenCalledTimes(2);
+    });
+
+    // Main process emits delayed AUDIO_END from the first session before stopAudioCapture settles
+    endCallback?.();
+    expect(stt.isListening).toBe(true);
+    expect(mockTrackStop).not.toHaveBeenCalled();
+
+    // Now stopAudioCapture settles, allowing the new capture to start in main process
+    resolveStop();
+    await vi.waitFor(() => {
+      expect(mockStartAudioCapture).toHaveBeenCalledTimes(2);
+      expect(mockProcessorConnect).toHaveBeenCalledTimes(2);
+    });
+    expect(stt.isListening).toBe(true);
+  });
 });

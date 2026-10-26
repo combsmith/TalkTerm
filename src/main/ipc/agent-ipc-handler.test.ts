@@ -267,4 +267,46 @@ describe('AgentIPCHandler', () => {
 
     expect(callOrder).toEqual(['start-1', 'end-1', 'start-2', 'end-2']);
   });
+
+  it('cancels queued agent:action turns when agent:cancel is triggered while a turn is running', async () => {
+    const router = createMockRouter();
+    const webContents = createMockWebContents();
+    const callOrder: string[] = [];
+    let finishFirst!: () => void;
+
+    vi.mocked(router.sendMessage)
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            callOrder.push('start-1');
+            finishFirst = () => {
+              callOrder.push('end-1');
+              resolve();
+            };
+          }),
+      )
+      .mockImplementationOnce(() => {
+        callOrder.push('start-2');
+        return Promise.resolve();
+      });
+
+    const handler = new AgentIPCHandler(router, () => webContents);
+    handler.register(ipcMain);
+
+    const agentAction = handlers.get(IPC_CHANNELS.AGENT_ACTION);
+    const cancelHandler = listeners.get(IPC_CHANNELS.AGENT_CANCEL);
+    const p1 = agentAction?.({}, 'session-1', 'first');
+    const p2 = agentAction?.({}, 'session-1', 'second');
+
+    await vi.waitFor(() => {
+      expect(callOrder).toEqual(['start-1']);
+    });
+
+    cancelHandler?.({});
+    finishFirst();
+    await Promise.all([p1, p2]);
+
+    expect(router.cancel).toHaveBeenCalledTimes(1);
+    expect(callOrder).toEqual(['start-1', 'end-1']);
+  });
 });

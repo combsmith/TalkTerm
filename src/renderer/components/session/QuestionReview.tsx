@@ -34,8 +34,8 @@ export function QuestionReview({
   }
 
   return (
-    <div data-testid="question-review" className="flex flex-col gap-4 p-4">
-      <div className="flex items-center justify-between">
+    <div data-testid="question-review" className="flex h-full min-h-0 flex-col gap-4 p-4">
+      <div className="flex shrink-0 items-center justify-between">
         <h2 className="text-subtitle text-text-on-dark" role="heading">
           Your Answers
         </h2>
@@ -44,7 +44,7 @@ export function QuestionReview({
         </span>
       </div>
 
-      <div className="flex flex-col gap-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
         {questionSet.questions.map((question, i) => (
           <div
             key={question.index}
@@ -76,7 +76,7 @@ export function QuestionReview({
         ))}
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex shrink-0 gap-3">
         <button
           type="button"
           aria-label="Edit answers"

@@ -223,4 +223,14 @@ describe('SettingsIPCHandler', () => {
     const selectAvatar = handlers.get(IPC_CHANNELS.AVATAR_SELECT);
     expect(() => selectAvatar?.({}, 'persona-123')).toThrow('User profile not found');
   });
+
+  it('deletes any previously stored key when ENV_KEY is selected via SETTINGS_STORE_KEY', () => {
+    const keyManager = createMockKeyManager(true);
+    const handler = new SettingsIPCHandler(keyManager, new InMemoryConfigStore());
+    handler.register(ipcMain);
+    const storeKey = handlers.get(IPC_CHANNELS.SETTINGS_STORE_KEY);
+    storeKey?.({}, 'ENV_KEY');
+    expect(keyManager.deleteKey).toHaveBeenCalledTimes(1);
+    expect(keyManager.storeKey).not.toHaveBeenCalled();
+  });
 });

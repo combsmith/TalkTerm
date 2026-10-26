@@ -6,7 +6,12 @@ import {
 import { IPC_CHANNELS } from '../../shared/types/domain/ipc-channels';
 import type { SessionRepository } from '../../shared/types/ports/session-repository';
 import type { AgentMessageRouter } from '../agent/agent-message-router';
-import { enqueueRouterOperation, type IPCMain, type IPCRegistrar } from './ipc-registrar';
+import {
+  cancelRouterOperations,
+  enqueueRouterOperation,
+  type IPCMain,
+  type IPCRegistrar,
+} from './ipc-registrar';
 import { validateString } from './validate-string';
 
 export interface WebContents {
@@ -40,25 +45,30 @@ export class AgentIPCHandler implements IPCRegistrar {
         const validSessionId = validateString(sessionId, 'sessionId');
         const validMessage = validateString(message, 'message');
 
-        await enqueueRouterOperation(this.router, async () => {
-          try {
-            const session = this.sessionRepo?.findById(validSessionId);
-            const workspacePath = session?.workspacePath;
-            await this.router.sendMessage(validSessionId, validMessage, workspacePath);
-          } catch (err: unknown) {
-            console.error('[AgentIPC] Error handling agent action:', err);
-            const category = classifyError(err);
-            webContents.send(IPC_CHANNELS.AGENT_MESSAGE, {
-              type: 'error',
-              userMessage: createUserFriendlyMessage(category),
-              recoveryOptions: recoveryOptionsForCategory(category),
-            });
-          }
-        });
+        await enqueueRouterOperation(
+          this.router,
+          async () => {
+            try {
+              const session = this.sessionRepo?.findById(validSessionId);
+              const workspacePath = session?.workspacePath;
+              await this.router.sendMessage(validSessionId, validMessage, workspacePath);
+            } catch (err: unknown) {
+              console.error('[AgentIPC] Error handling agent action:', err);
+              const category = classifyError(err);
+              webContents.send(IPC_CHANNELS.AGENT_MESSAGE, {
+                type: 'error',
+                userMessage: createUserFriendlyMessage(category),
+                recoveryOptions: recoveryOptionsForCategory(category),
+              });
+            }
+          },
+          { cancellable: true },
+        );
       },
     );
 
     ipcMain.on(IPC_CHANNELS.AGENT_CANCEL, () => {
+      cancelRouterOperations(this.router);
       this.router.cancel();
     });
   }
