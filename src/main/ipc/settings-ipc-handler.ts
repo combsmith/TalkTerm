@@ -71,7 +71,7 @@ export class SettingsIPCHandler implements IPCRegistrar {
     });
 
     ipcMain.handle(IPC_CHANNELS.PROFILE_GET, () => {
-      return this.configStore.get('userProfile');
+      return this.configStore.get('userProfile') ?? null;
     });
 
     ipcMain.handle(IPC_CHANNELS.PROFILE_SET, (_event: unknown, name: unknown) => {

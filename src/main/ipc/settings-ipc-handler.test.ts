@@ -123,9 +123,10 @@ describe('SettingsIPCHandler', () => {
     const store = new InMemoryConfigStore();
     const handler = new SettingsIPCHandler(createMockKeyManager(), store);
     handler.register(ipcMain);
+    const getProfile = handlers.get(IPC_CHANNELS.PROFILE_GET);
+    expect(getProfile?.({})).toBeNull();
     const setProfile = handlers.get(IPC_CHANNELS.PROFILE_SET);
     setProfile?.({}, 'Root');
-    const getProfile = handlers.get(IPC_CHANNELS.PROFILE_GET);
     const profile = getProfile?.({}) as { name: string } | undefined;
     expect(profile?.name).toBe('Root');
   });

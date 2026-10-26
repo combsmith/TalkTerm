@@ -196,6 +196,7 @@ export function ConversationView({
 
     if (parsed !== null) {
       pendingTextRef.current = '';
+      setSpokenQuestionAnswer(null);
       setActiveQuestionSet(parsed);
 
       // If preamble is long enough for a document, show it in DocumentView
@@ -575,12 +576,14 @@ export function ConversationView({
 
   /** FR59 — Submit aggregated answers from question card stack */
   function handleQuestionSubmit(aggregatedMessage: string): void {
+    setSpokenQuestionAnswer(null);
     setActiveQuestionSet(null);
     handleSendInternal(aggregatedMessage);
   }
 
   /** Dismiss question card stack without submitting */
   function handleQuestionDismiss(): void {
+    setSpokenQuestionAnswer(null);
     setActiveQuestionSet(null);
   }
 
@@ -619,6 +622,7 @@ export function ConversationView({
 
   /** Handle menu item selection — send the chosen label to the agent */
   function handleMenuSelect(label: string): void {
+    setSpokenQuestionAnswer(null);
     setActiveQuestionSet(null);
     handleSendInternal(label);
   }

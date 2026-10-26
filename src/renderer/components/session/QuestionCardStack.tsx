@@ -124,14 +124,15 @@ export function QuestionCardStack({
   const total = questionSet.questions.length;
   const [state, dispatch] = useReducer(reducer, total, createInitialState);
   const prevQuestionSetRef = useRef(questionSet);
-  const lastSpokenSeqRef = useRef(0);
+  const lastSpokenSeqRef = useRef(spokenAnswer?.seq ?? 0);
 
   useEffect(() => {
     if (prevQuestionSetRef.current !== questionSet) {
       prevQuestionSetRef.current = questionSet;
+      lastSpokenSeqRef.current = spokenAnswer?.seq ?? 0;
       dispatch({ type: 'reset', total: questionSet.questions.length });
     }
-  }, [questionSet]);
+  }, [questionSet, spokenAnswer?.seq]);
 
   useEffect(() => {
     if (

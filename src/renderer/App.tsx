@@ -66,7 +66,7 @@ export function App(): ReactElement | null {
         getWorkspacePromise,
       ])
         .then(([launchState, profile, savedWorkspace]) => {
-          if (profile !== null && profile.name !== '') {
+          if (profile != null && profile.name !== '') {
             setUserName(profile.name);
           }
           if (launchState.envKeyDetected === true) {

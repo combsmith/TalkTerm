@@ -250,11 +250,20 @@ export class SherpaOnnxStt {
 
     return new Promise((resolve, reject) => {
       const file = fs.createWriteStream(tempPath);
+      let settled = false;
+      let activeReq: ReturnType<typeof https.get> | null = null;
       const fail = (err: Error): void => {
+        if (settled) return;
+        settled = true;
+        activeReq?.destroy();
         file.close();
         cleanupTemp();
         reject(err);
       };
+
+      file.on('error', (err) => {
+        fail(err);
+      });
 
       const request = (reqUrl: string, redirectsLeft: number): void => {
         const req = https.get(reqUrl, (response) => {
@@ -277,12 +286,15 @@ export class SherpaOnnxStt {
             return;
           }
           file.on('finish', () => {
+            if (settled) return;
+            settled = true;
             file.close();
             fs.renameSync(tempPath, destPath);
             resolve();
           });
           response.pipe(file);
         });
+        activeReq = req;
 
         req.on('error', (err) => {
           fail(err);

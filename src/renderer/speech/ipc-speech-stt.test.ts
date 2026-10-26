@@ -241,4 +241,41 @@ describe('IpcSpeechStt', () => {
     expect(unsubError).toHaveBeenCalledTimes(1);
     expect(unsubEnd).toHaveBeenCalledTimes(1);
   });
+
+  it('rejects stale startup attempt when stopped and restarted while getUserMedia is pending', async () => {
+    const staleTrackStop = vi.fn();
+    let resolveFirstStream!: (stream: any) => void;
+    mockGetUserMedia.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFirstStream = resolve;
+      }),
+    );
+
+    const stt = new IpcSpeechStt();
+    stt.start(); // generation 1
+    stt.stop(); // cancels generation 1
+    stt.start(); // generation 2 (uses default resolved mockGetUserMedia)
+
+    resolveFirstStream({ getTracks: () => [{ stop: staleTrackStop }] });
+    await vi.waitFor(() => {
+      expect(staleTrackStop).toHaveBeenCalledTimes(1);
+      expect(mockStartAudioCapture).toHaveBeenCalledTimes(1);
+    });
+
+    // Also test stale rejection does not emit onError for active generation
+    let rejectStale!: (err: Error) => void;
+    mockGetUserMedia.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectStale = reject;
+      }),
+    );
+    const stt2 = new IpcSpeechStt();
+    const onError2 = vi.fn();
+    stt2.onError = onError2;
+    stt2.start();
+    stt2.stop();
+    rejectStale(new Error('stale rejection'));
+    await Promise.resolve();
+    expect(onError2).not.toHaveBeenCalled();
+  });
 });

@@ -52,7 +52,7 @@ describe('determineFirstIncompleteStep', () => {
     expect(determineFirstIncompleteStep(state)).toBe('ready');
   });
 
-  it('returns first incomplete step by priority (key > profile > avatar > workspace)', () => {
+  it('returns first incomplete step by priority (key > profile > workspace > avatar)', () => {
     const state: LaunchState = {
       apiKeyValid: false,
       profileComplete: false,
@@ -60,5 +60,13 @@ describe('determineFirstIncompleteStep', () => {
       workspaceSelected: false,
     };
     expect(determineFirstIncompleteStep(state)).toBe('needs-key');
+
+    const postProfileState: LaunchState = {
+      apiKeyValid: true,
+      profileComplete: true,
+      avatarSelected: false,
+      workspaceSelected: false,
+    };
+    expect(determineFirstIncompleteStep(postProfileState)).toBe('needs-workspace');
   });
 });

@@ -8,6 +8,7 @@ import type { SpeechToText, SpeechToTextResult } from '../../shared/types/ports/
  */
 export class IpcSpeechStt implements SpeechToText {
   private _isListening = false;
+  private captureGeneration = 0;
   private audioContext: AudioContext | null = null;
   private mediaStream: MediaStream | null = null;
   private sourceNode: MediaStreamAudioSourceNode | null = null;
@@ -40,12 +41,14 @@ export class IpcSpeechStt implements SpeechToText {
     });
     this.unsubEnd = window.electronAPI.onAudioEnd(() => {
       this._isListening = false;
+      this.captureGeneration++;
       this.teardownCapture();
       this.onEnd?.();
     });
 
     // Start audio capture and IPC streaming
-    void this.startCapture();
+    const generation = ++this.captureGeneration;
+    void this.startCapture(generation);
   }
 
   stop(): void {
@@ -58,6 +61,7 @@ export class IpcSpeechStt implements SpeechToText {
       return;
     }
     this._isListening = false;
+    this.captureGeneration++;
     this.teardownCapture();
 
     // Tell main process to stop
@@ -95,11 +99,11 @@ export class IpcSpeechStt implements SpeechToText {
     this.unsubEnd = null;
   }
 
-  private isStillListening(): boolean {
-    return this._isListening;
+  private isGenerationActive(generation: number): boolean {
+    return this._isListening && this.captureGeneration === generation;
   }
 
-  private async startCapture(): Promise<void> {
+  private async startCapture(generation: number): Promise<void> {
     try {
       // Request microphone
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -110,23 +114,22 @@ export class IpcSpeechStt implements SpeechToText {
           noiseSuppression: true,
         },
       });
-      if (!this.isStillListening()) {
+      if (!this.isGenerationActive(generation)) {
+        for (const track of stream.getTracks()) {
+          track.stop();
+        }
+        return;
+      }
+
+      // Tell main process to start the recognizer
+      await window.electronAPI.startAudioCapture();
+      if (!this.isGenerationActive(generation)) {
         for (const track of stream.getTracks()) {
           track.stop();
         }
         return;
       }
       this.mediaStream = stream;
-
-      // Tell main process to start the recognizer
-      await window.electronAPI.startAudioCapture();
-      if (!this.isStillListening()) {
-        for (const track of stream.getTracks()) {
-          track.stop();
-        }
-        this.mediaStream = null;
-        return;
-      }
 
       // Set up AudioContext → ScriptProcessorNode → IPC pipeline
       this.audioContext = new AudioContext({ sampleRate: 16000 });
@@ -152,6 +155,9 @@ export class IpcSpeechStt implements SpeechToText {
 
       console.debug('[IpcSpeechStt] Audio capture started (16kHz mono)');
     } catch (err) {
+      if (this.captureGeneration !== generation) {
+        return;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[IpcSpeechStt] Failed to start audio capture:', msg);
       this._isListening = false;

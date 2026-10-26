@@ -210,6 +210,34 @@ describe('SherpaOnnxStt', () => {
       await expect(stt.ensureModel()).rejects.toThrow('Timeout downloading');
       expect(mockUnlinkSync).not.toHaveBeenCalled();
     });
+
+    it('rejects and cleans up temp file when destination WriteStream emits an error', async () => {
+      mockExistsSync.mockImplementation((p: string) => {
+        if (p.endsWith('tokens.txt')) return false;
+        if (p.endsWith('.tmp')) return true;
+        return true;
+      });
+
+      const fileStream = createFakeFileStream();
+      mockCreateWriteStream.mockReturnValue(fileStream);
+
+      mockHttpsGet.mockImplementation((_url: string, cb: (res: any) => void) => {
+        const req = createFakeRequest();
+        cb({
+          statusCode: 200,
+          headers: {},
+          resume: vi.fn(),
+          pipe: vi.fn(() => {
+            fileStream.emit('error', new Error('ENOSPC: no space left on device'));
+          }),
+        });
+        return req;
+      });
+
+      const stt = new SherpaOnnxStt();
+      await expect(stt.ensureModel()).rejects.toThrow('ENOSPC');
+      expect(mockUnlinkSync).toHaveBeenCalledWith(path.join(EXPECTED_MODEL_DIR, 'tokens.txt.tmp'));
+    });
   });
 
   describe('initialize, start, acceptAudio, processAudio, and stop', () => {
