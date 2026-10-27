@@ -58,6 +58,7 @@ type SdkCanUseTool = (
 ) => Promise<SdkPermissionResult>;
 
 interface PendingPermission {
+  toolName: string;
   input: Record<string, unknown>;
   resolve: (result: SdkPermissionResult) => void;
 }
@@ -186,8 +187,8 @@ export class ClaudeSdkBackend implements AgentBackend {
   private lastTurnError = '';
   private readonly sessionHistory = new Map<string, ConversationTurn[]>();
   private readonly sdkSessionIds = new Map<string, string>();
-  /** Tool-permission request awaiting a user decision via respondToConfirmation(). */
-  private pendingPermission: PendingPermission | null = null;
+  /** Tool-permission requests awaiting a user decision; the head is the one shown in the UI. */
+  private readonly permissionQueue: PendingPermission[] = [];
   /** Events raised outside the SDK message stream (e.g. permission prompts) awaiting delivery. */
   private readonly injectedEvents: AgentEvent[] = [];
   /** Wakes consumeSdkStream when an injected event arrives while it awaits the SDK. */
@@ -201,6 +202,8 @@ export class ClaudeSdkBackend implements AgentBackend {
     private readonly getMemoryContext: () => string | null = () => null,
     private readonly onSdkSessionId?: (sessionId: string, sdkSessionId: string) => void,
     private readonly getSdkSessionId?: (sessionId: string) => string | null,
+    /** Directories containing bundled `_bmad` assets (e.g. Electron resources path). */
+    private readonly getBundledAssetRoots: () => readonly string[] = () => [],
   ) {}
 
   async *startSession(config: AgentSessionConfig): AsyncIterable<AgentEvent> {
@@ -282,7 +285,7 @@ export class ClaudeSdkBackend implements AgentBackend {
   }
 
   cancelCurrentAction(): void {
-    this.respondToConfirmation(false);
+    this.denyAllPermissions('Request was cancelled.');
     this.abortController?.abort();
     // Fire-and-forget interrupt on the active query — ignore if already completed
     this.activeQuery?.interrupt().catch((err: unknown) => {
@@ -290,20 +293,41 @@ export class ClaudeSdkBackend implements AgentBackend {
     });
   }
 
+  /** Resolve the permission request currently shown to the user, then present the next one. */
   respondToConfirmation(approved: boolean): void {
-    const pending = this.pendingPermission;
-    if (pending === null) return;
-    this.pendingPermission = null;
-    pending.resolve(
+    const current = this.permissionQueue.shift();
+    if (current === undefined) return;
+    current.resolve(
       approved
-        ? { behavior: 'allow', updatedInput: pending.input }
+        ? { behavior: 'allow', updatedInput: current.input }
         : { behavior: 'deny', message: 'The user declined this action.', interrupt: true },
     );
+    this.presentNextPermission();
+  }
+
+  private denyAllPermissions(message: string): void {
+    const pending = this.permissionQueue.splice(0);
+    for (const request of pending) {
+      request.resolve({ behavior: 'deny', message, interrupt: true });
+    }
+  }
+
+  /** Surface the head of the permission queue to the UI as a confirm-request. */
+  private presentNextPermission(): void {
+    const next = this.permissionQueue[0];
+    if (next === undefined) return;
+    this.injectedEvents.push({
+      type: 'confirm-request',
+      action: next.toolName,
+      description: describeToolRequest(next.toolName, next.input),
+    });
+    this.wakeConsumer?.();
   }
 
   /**
    * SDK permission callback: surfaces a confirm-request to the UI and waits for the
    * user's decision (delivered through respondToConfirmation) before the tool runs.
+   * Concurrent requests (parallel tool calls) are queued and presented one at a time.
    */
   private readonly canUseTool: SdkCanUseTool = (toolName, input, { signal }) =>
     new Promise<SdkPermissionResult>((resolve) => {
@@ -311,24 +335,24 @@ export class ClaudeSdkBackend implements AgentBackend {
         resolve({ behavior: 'deny', message: 'Request was cancelled.', interrupt: true });
         return;
       }
-      // Only one prompt can be shown at a time — supersede any stale request.
-      this.respondToConfirmation(false);
-      this.pendingPermission = { input, resolve };
+      const request: PendingPermission = { toolName, input, resolve };
+      this.permissionQueue.push(request);
       signal.addEventListener(
         'abort',
         () => {
-          if (this.pendingPermission?.resolve === resolve) {
-            this.respondToConfirmation(false);
+          const index = this.permissionQueue.indexOf(request);
+          if (index === -1) return;
+          this.permissionQueue.splice(index, 1);
+          resolve({ behavior: 'deny', message: 'Request was cancelled.', interrupt: true });
+          if (index === 0) {
+            this.presentNextPermission();
           }
         },
         { once: true },
       );
-      this.injectedEvents.push({
-        type: 'confirm-request',
-        action: toolName,
-        description: describeToolRequest(toolName, input),
-      });
-      this.wakeConsumer?.();
+      if (this.permissionQueue.length === 1) {
+        this.presentNextPermission();
+      }
     });
 
   // eslint-disable-next-line @typescript-eslint/require-await -- will be async when resume uses SDK
@@ -420,24 +444,27 @@ export class ClaudeSdkBackend implements AgentBackend {
 
   /**
    * Load the BMAD agent definition and config.
-   * Checks the workspace first, then falls back to app root (process.cwd()).
+   * Checks the workspace first, then the bundled app assets (injected — e.g. Electron's
+   * resources path when packaged), then falls back to process.cwd().
    * Replaces {project-root} placeholders with the resolved project path.
    */
   async loadBmadContext(workspacePath?: string): Promise<string | null> {
     const candidates: string[] = [];
+    const addCandidate = (dir: string): void => {
+      if (dir !== '' && !candidates.includes(dir)) {
+        candidates.push(dir);
+      }
+    };
     if (workspacePath !== undefined) {
-      candidates.push(workspacePath);
+      addCandidate(workspacePath);
     }
-    // Fallback to app root (project root in dev, app path in prod)
+    // Bundled assets are independent of the launch directory (packaged apps start with cwd '/')
+    for (const root of this.getBundledAssetRoots()) {
+      addCandidate(root);
+    }
+    // Last resort: launch directory (project root when running from a checkout)
     const appRoot = process.cwd();
-    if (appRoot !== workspacePath) {
-      candidates.push(appRoot);
-    }
-
-    if (candidates.length === 0) {
-      this.debugLog('[SDK Debug] No candidates for BMAD context loading');
-      return null;
-    }
+    addCandidate(appRoot);
 
     let bmad: { agent: string; config: string | null } | null = null;
     let resolvedRoot = workspacePath ?? appRoot;

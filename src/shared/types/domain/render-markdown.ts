@@ -23,9 +23,10 @@ export function detectContentType(text: string): ContentType {
     return 'comparison-table';
   }
 
-  // Check for plan-like content (numbered steps with headings or checkboxes)
+  // Check for plan-like content (numbered steps with headings or checkboxes). Only route to the
+  // plan panel when the conversion is lossless — otherwise fall through so nothing is dropped.
   const planIndicators = (text.match(/^(\d+[.)]\s|[-*]\s\[[ x]\])/gm) ?? []).length;
-  if (planIndicators >= 3) {
+  if (planIndicators >= 3 && splitLosslessPlan(text) !== null) {
     return 'plan';
   }
 
@@ -74,6 +75,31 @@ export interface PlanStep {
   title: string;
   description: string;
   done: boolean;
+}
+
+/** A line the plan parser turns into a step (numbered item, bullet, or checkbox). */
+const PLAN_STEP_LINE = /^(?:\d+[.)]|[-*])[ \t]+\S/;
+
+/**
+ * Check whether plan-like text can be shown in the plan panel without losing content.
+ * Allowed: an optional single intro line before the steps (returned as `intro`), then only
+ * step lines and blank lines. Continuation/indented instructions, code, or trailing
+ * explanation make the conversion lossy, so null is returned and callers should fall back
+ * to the document/text views that preserve the full response.
+ */
+export function splitLosslessPlan(text: string): { intro: string } | null {
+  const lines = text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l !== '');
+  const firstStep = lines.findIndex((l) => PLAN_STEP_LINE.test(l));
+  if (firstStep === -1 || firstStep > 1) {
+    return null;
+  }
+  if (!lines.slice(firstStep).every((l) => PLAN_STEP_LINE.test(l))) {
+    return null;
+  }
+  return { intro: firstStep === 1 ? (lines[0] ?? '') : '' };
 }
 
 /** Parse plan/checklist content into structured steps. */

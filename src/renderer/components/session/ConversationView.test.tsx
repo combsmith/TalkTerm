@@ -733,6 +733,22 @@ describe('ConversationView', () => {
     expect(screen.getByText('Write tests')).toBeInTheDocument();
   });
 
+  it('keeps a plan intro line as the plan heading instead of dropping it', () => {
+    render(<ConversationView userName="DJ" avatarName="Mary" sessionId="s1" />);
+    simulateTextAndFlush("Here's the rollout:\n1. Install\n2. Configure\n3. Deploy");
+    expect(screen.getByText("Here's the rollout:")).toBeInTheDocument();
+    expect(screen.getByText('Deploy')).toBeInTheDocument();
+  });
+
+  it('shows lossy step lists with indented commands in full instead of the plan panel', () => {
+    render(<ConversationView userName="DJ" avatarName="Mary" sessionId="s1" />);
+    simulateTextAndFlush(
+      '1. Back up\n   pg_dump prod > b.dump\n2. Migrate\n   npm run migrate\n3. Verify\n   npm run verify',
+    );
+    expect(screen.queryByText(/Here's my proposed plan/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/pg_dump prod > b\.dump/)).toBeInTheDocument();
+  });
+
   it('routes comparison table and clustered cards content to OutputPanel', () => {
     render(<ConversationView userName="DJ" avatarName="Mary" sessionId="s1" />);
 

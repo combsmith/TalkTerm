@@ -11,6 +11,7 @@ import {
   parseClusteredContent,
   parseMarkdownTable,
   parsePlanContent,
+  splitLosslessPlan,
 } from '../../../shared/types/domain/render-markdown';
 import type { AvatarAnimationState } from '../../hooks/useAvatarState';
 import { useDisplayMode } from '../../hooks/useDisplayMode';
@@ -270,9 +271,15 @@ export function ConversationView({
       } else if (contentType === 'plan') {
         pendingTextRef.current = '';
         displayModeRef.current = 'plan-preview';
+        // detectContentType only returns 'plan' when the conversion is lossless; the optional
+        // intro line becomes the plan heading so it isn't dropped either.
+        const intro = splitLosslessPlan(text)?.intro ?? '';
         displayMode.setContent({
           type: 'plan-preview',
-          data: normalizePlanData(parsePlanContent(text)),
+          data: {
+            ...normalizePlanData(parsePlanContent(text)),
+            ...(intro !== '' ? { approach: intro } : {}),
+          },
         });
         setAvatarState('ready');
         setCaption("Here's my proposed plan.");

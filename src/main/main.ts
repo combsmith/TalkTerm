@@ -181,6 +181,8 @@ function bootstrap(): void {
     (sessionId: string): string | null => {
       return sessionRepo.findById(sessionId)?.sdkSessionId ?? null;
     },
+    // Bundled BMAD assets: shipped via forge `extraResource` when packaged; the checkout root in dev
+    (): readonly string[] => [app.isPackaged ? process.resourcesPath : app.getAppPath()],
   );
   const agentRouter = new AgentMessageRouter(agentBackend);
 

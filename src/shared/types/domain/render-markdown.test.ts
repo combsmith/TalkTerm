@@ -5,6 +5,7 @@ import {
   parseMarkdownTable,
   parsePlanContent,
   parseClusteredContent,
+  splitLosslessPlan,
 } from './render-markdown';
 
 describe('isDocumentContent', () => {
@@ -57,6 +58,63 @@ describe('detectContentType', () => {
     expect(detectContentType(plan)).toBe('plan');
   });
 
+  it('does not route to the plan panel when steps carry indented instructions (lossy)', () => {
+    const migration = [
+      '1. Back up the database',
+      '   pg_dump -Fc prod > backup.dump',
+      '2. Run the migration',
+      '   npm run migrate -- --env staging',
+      '3. Verify',
+      '   npm run verify',
+    ].join('\n');
+    expect(detectContentType(migration)).toBe('text');
+    // Long lossy plans fall back to the document view, which keeps every line
+    expect(detectContentType(`${migration}\n${'Only run this on staging. '.repeat(30)}`)).toBe(
+      'document',
+    );
+  });
+
+  it('does not route to the plan panel when explanation follows the steps', () => {
+    const plan = [
+      '1. Back up the database',
+      '2. Run the migration',
+      '3. Verify',
+      'Roll back with the backup if verification fails.',
+    ].join('\n');
+    expect(detectContentType(plan)).toBe('text');
+  });
+
+  it('still returns "plan" with a single intro line before the steps', () => {
+    const plan = ["Here's the plan:", '1. Install', '2. Configure', '3. Run'].join('\n');
+    expect(detectContentType(plan)).toBe('plan');
+  });
+});
+
+describe('splitLosslessPlan', () => {
+  it('returns an empty intro for step-only content (blank lines allowed)', () => {
+    expect(splitLosslessPlan('1. A\n\n2. B\n- [ ] C')).toEqual({ intro: '' });
+  });
+
+  it('returns the single intro line', () => {
+    expect(splitLosslessPlan("Here's the plan:\n1. A\n2. B")).toEqual({
+      intro: "Here's the plan:",
+    });
+  });
+
+  it('returns null for more than one intro line', () => {
+    expect(splitLosslessPlan('Intro one.\nIntro two.\n1. A\n2. B')).toBeNull();
+  });
+
+  it('returns null when there are no steps', () => {
+    expect(splitLosslessPlan('Just prose.')).toBeNull();
+  });
+
+  it('returns null when a non-step line appears after the steps begin', () => {
+    expect(splitLosslessPlan('1. A\n   detail\n2. B')).toBeNull();
+  });
+});
+
+describe('detectContentType (continued)', () => {
   it('returns "clustered-cards" for bold headers with list items', () => {
     const clustered = [
       '**Frontend**',

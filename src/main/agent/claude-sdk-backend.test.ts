@@ -1255,6 +1255,54 @@ describe('ClaudeSdkBackend', () => {
       expect(context).not.toBeNull();
       expect(context).toContain('Tracked Mary Analyst Skill');
     });
+
+    it('loads bundled BMAD assets from the injected resources root regardless of process.cwd()', async () => {
+      const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/');
+      const fsMock = await import('node:fs/promises');
+      const readPaths: string[] = [];
+      vi.mocked(fsMock.readFile).mockImplementation((filePath: unknown) => {
+        const p = String(filePath);
+        readPaths.push(p);
+        if (p.startsWith('/App/Resources') && p.endsWith('SKILL.md')) {
+          return Promise.resolve('# Bundled Mary from {project-root}');
+        }
+        return Promise.reject(new Error('ENOENT'));
+      });
+
+      const backend = new ClaudeSdkBackend(
+        createMockAuditRepo(),
+        () => 'sk-ant-test-key',
+        () => 'api-key',
+        () => 'User',
+        () => null,
+        undefined,
+        undefined,
+        () => ['/App/Resources', '/tmp'],
+      );
+      const context = await backend.loadBmadContext('/tmp');
+
+      expect(context).toContain('Bundled Mary from /App/Resources');
+      // Workspace is checked first; duplicate candidates are not re-read
+      expect(readPaths[0]?.startsWith('/tmp')).toBe(true);
+      expect(
+        readPaths.filter((p) => p.startsWith('/tmp') && p.endsWith('analyst.md')),
+      ).toHaveLength(1);
+      cwdSpy.mockRestore();
+    });
+
+    it('returns null when no candidate (workspace, bundled, cwd) has BMAD files', async () => {
+      const backend = new ClaudeSdkBackend(
+        createMockAuditRepo(),
+        () => 'sk-ant-test-key',
+        () => 'api-key',
+        () => 'User',
+        () => null,
+        undefined,
+        undefined,
+        () => ['', '/App/Resources'],
+      );
+      await expect(backend.loadBmadContext()).resolves.toBeNull();
+    });
   });
 
   describe('debug logging', () => {
@@ -1555,7 +1603,159 @@ describe('ClaudeSdkBackend', () => {
         }
 
         expect(decisions).toEqual([
-          { behavior: 'deny', message: 'The user declined this action.', interrupt: true },
+          { behavior: 'deny', message: 'Request was cancelled.', interrupt: true },
+        ]);
+      });
+
+      it('queues concurrent permission requests and presents them one at a time', async () => {
+        const decisions: Array<{ tool: string; result: PermissionResult }> = [];
+        const controllers = (['/a.ts', '/b.ts', '/c.ts'] as const).map((file) => ({
+          file,
+          controller: new AbortController(),
+        }));
+        const querySpy = vi
+          .fn()
+          .mockImplementation((params: { options: { canUseTool: CanUseToolFn } }) => {
+            async function* gen(): AsyncGenerator<Record<string, unknown>, void> {
+              // Parallel tool calls: the SDK asks for all permissions before any resolves
+              const requests = controllers.map(({ file, controller }) =>
+                params.options
+                  .canUseTool('Write', { file_path: file }, { signal: controller.signal })
+                  .then((result) => {
+                    decisions.push({ tool: file, result });
+                  }),
+              );
+              // The SDK withdraws the third request before it is shown
+              controllers.at(-1)?.controller.abort();
+              await Promise.all(requests);
+              yield {
+                type: 'result',
+                subtype: 'success',
+                result: 'done',
+                total_cost_usd: 0,
+                num_turns: 1,
+                session_id: 'sdk-q',
+              };
+            }
+            const g = gen() as AsyncGenerator<Record<string, unknown>, void> & {
+              interrupt: () => Promise<void>;
+            };
+            g.interrupt = vi.fn().mockResolvedValue(undefined);
+            return g;
+          });
+        installSdkMock({ query: querySpy });
+        const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
+
+        const prompts: string[] = [];
+        for await (const event of backend.sendMessage('sess-q', 'write files')) {
+          if (event.type === 'confirm-request') {
+            prompts.push(event.description);
+            // Approve the first, decline the second
+            backend.respondToConfirmation(prompts.length === 1);
+          }
+        }
+
+        // Each live request is shown exactly once, in order; the withdrawn one never is
+        expect(prompts).toEqual(['Write: /a.ts', 'Write: /b.ts']);
+        expect(decisions).toEqual([
+          {
+            tool: '/c.ts',
+            result: { behavior: 'deny', message: 'Request was cancelled.', interrupt: true },
+          },
+          { tool: '/a.ts', result: { behavior: 'allow', updatedInput: { file_path: '/a.ts' } } },
+          {
+            tool: '/b.ts',
+            result: {
+              behavior: 'deny',
+              message: 'The user declined this action.',
+              interrupt: true,
+            },
+          },
+        ]);
+      });
+
+      it('advances to the next queued request when the shown request is withdrawn by the SDK', async () => {
+        const first = new AbortController();
+        const querySpy = vi
+          .fn()
+          .mockImplementation((params: { options: { canUseTool: CanUseToolFn } }) => {
+            async function* gen(): AsyncGenerator<Record<string, unknown>, void> {
+              const a = params.options.canUseTool(
+                'Bash',
+                { command: 'a' },
+                { signal: first.signal },
+              );
+              const b = params.options.canUseTool(
+                'Bash',
+                { command: 'b' },
+                { signal: new AbortController().signal },
+              );
+              first.abort();
+              await Promise.all([a, b]);
+              yield {
+                type: 'result',
+                subtype: 'success',
+                result: 'done',
+                total_cost_usd: 0,
+                num_turns: 1,
+                session_id: 'sdk-w',
+              };
+            }
+            const g = gen() as AsyncGenerator<Record<string, unknown>, void> & {
+              interrupt: () => Promise<void>;
+            };
+            g.interrupt = vi.fn().mockResolvedValue(undefined);
+            return g;
+          });
+        installSdkMock({ query: querySpy });
+        const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
+
+        const prompts: string[] = [];
+        for await (const event of backend.sendMessage('sess-w', 'go')) {
+          if (event.type === 'confirm-request') {
+            prompts.push(event.description);
+            if (event.description === 'Bash: b') backend.respondToConfirmation(true);
+          }
+        }
+
+        // 'a' was shown first, withdrawn, then 'b' was presented and approved
+        expect(prompts).toEqual(['Bash: a', 'Bash: b']);
+      });
+
+      it('denies every queued request on cancel', async () => {
+        const decisions: PermissionResult[] = [];
+        const querySpy = vi
+          .fn()
+          .mockImplementation((params: { options: { canUseTool: CanUseToolFn } }) => {
+            async function* gen(): AsyncGenerator<Record<string, unknown>, void> {
+              const signal = new AbortController().signal;
+              await Promise.all(
+                ['x', 'y'].map((command) =>
+                  params.options.canUseTool('Bash', { command }, { signal }).then((r) => {
+                    decisions.push(r);
+                  }),
+                ),
+              );
+              yield { type: 'result', subtype: 'success', result: 'r', session_id: 'sdk-c' };
+            }
+            const g = gen() as AsyncGenerator<Record<string, unknown>, void> & {
+              interrupt: () => Promise<void>;
+            };
+            g.interrupt = vi.fn().mockResolvedValue(undefined);
+            return g;
+          });
+        installSdkMock({ query: querySpy });
+        const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
+
+        for await (const event of backend.sendMessage('sess-c', 'go')) {
+          if (event.type === 'confirm-request') {
+            backend.cancelCurrentAction();
+          }
+        }
+
+        expect(decisions).toEqual([
+          { behavior: 'deny', message: 'Request was cancelled.', interrupt: true },
+          { behavior: 'deny', message: 'Request was cancelled.', interrupt: true },
         ]);
       });
 

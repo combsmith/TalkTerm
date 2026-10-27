@@ -5,6 +5,9 @@ import { MakerZIP } from '@electron-forge/maker-zip';
 const config: ForgeConfig = {
   packagerConfig: {
     name: 'TalkTerm',
+    // Ship the BMAD agent definitions (analyst persona + config) alongside the app so the
+    // backend can load them from process.resourcesPath regardless of the launch directory.
+    extraResource: ['_bmad'],
   },
   makers: [new MakerZIP()],
   plugins: [

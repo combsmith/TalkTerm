@@ -514,7 +514,7 @@ test.describe('Conversation Patterns', () => {
     delete (env as Record<string, string | undefined>)['ANTHROPIC_API_KEY'];
 
     app = await electron.launch({
-      args: ['--no-sandbox', path.join(__dirname, '../../.vite/build/main.js')],
+      args: ['--no-sandbox', path.join(__dirname, '../../.vite/build/main.cjs')],
       env,
     });
 
