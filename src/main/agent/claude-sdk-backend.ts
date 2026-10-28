@@ -207,6 +207,8 @@ export class ClaudeSdkBackend implements AgentBackend {
   ) {}
 
   async *startSession(config: AgentSessionConfig): AsyncIterable<AgentEvent> {
+    const controller = new AbortController();
+    this.abortController = controller;
     const useSubscription = this.getAuthMode() === 'claude-subscription';
 
     if (!useSubscription) {
@@ -224,6 +226,10 @@ export class ClaudeSdkBackend implements AgentBackend {
     }
 
     const sdk = await this.loadSdk();
+    if (controller.signal.aborted) {
+      yield { type: 'complete', summary: 'Cancelled by user' };
+      return;
+    }
     if (sdk === null) {
       yield {
         type: 'text',
@@ -243,6 +249,8 @@ export class ClaudeSdkBackend implements AgentBackend {
     message: string,
     workspacePath?: string,
   ): AsyncIterable<AgentEvent> {
+    const controller = new AbortController();
+    this.abortController = controller;
     // Audit logging is best-effort — don't let it break the conversation
     try {
       this.auditRepo.append(createAuditEntry(sessionId, 'user:message', 'success', message));
@@ -271,6 +279,10 @@ export class ClaudeSdkBackend implements AgentBackend {
     }
 
     const sdk = await this.loadSdk();
+    if (controller.signal.aborted) {
+      yield { type: 'complete', summary: 'Cancelled by user' };
+      return;
+    }
     if (sdk === null) {
       yield {
         type: 'error',
@@ -578,9 +590,14 @@ export class ClaudeSdkBackend implements AgentBackend {
     config: AgentSessionConfig,
     apiKey: string | null,
   ): AsyncIterable<AgentEvent> {
-    this.abortController = new AbortController();
+    const controller = this.abortController ?? new AbortController();
+    this.abortController = controller;
 
     const bmadContext = await this.loadBmadContext(config.workspacePath);
+    if (controller.signal.aborted) {
+      yield { type: 'complete', summary: 'Cancelled by user' };
+      return;
+    }
     const prompt = 'Hello — I just opened a new session. Please introduce yourself briefly.';
     const options = this.buildSdkOptions(
       apiKey,
@@ -615,7 +632,13 @@ export class ClaudeSdkBackend implements AgentBackend {
     workspacePath?: string,
   ): AsyncIterable<AgentEvent> {
     const maxRetries = 3;
+    const initialController = this.abortController ?? new AbortController();
+    this.abortController = initialController;
     const bmadContext = await this.loadBmadContext(workspacePath);
+    if (initialController.signal.aborted) {
+      yield { type: 'complete', summary: 'Cancelled by user' };
+      return;
+    }
     const persistedSdkId =
       this.sdkSessionIds.get(sessionId) ?? this.getSdkSessionId?.(sessionId) ?? null;
     if (persistedSdkId !== null) {
@@ -626,7 +649,9 @@ export class ClaudeSdkBackend implements AgentBackend {
     let resumeFailed = false;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      this.abortController = new AbortController();
+      if (attempt > 0) {
+        this.abortController = new AbortController();
+      }
       this.lastTurnError = '';
 
       const useContinue = hasPriorTurns && !resumeFailed;
@@ -821,13 +846,14 @@ export class ClaudeSdkBackend implements AgentBackend {
 
   private mapAssistantMessage(msg: SdkAssistantMessage, sessionId: string): AgentEvent[] {
     if (msg.error !== undefined) {
+      this.lastTurnError = msg.error;
+      const rawCategory = classifyError(msg.error);
+      const category = rawCategory === 'unknown' ? 'sdk-error' : rawCategory;
       return [
         {
           type: 'error',
-          userMessage: 'Something unexpected happened. Let me try a different approach.',
-          recoveryOptions: [
-            { label: 'Try again', action: 'retry', description: 'Retry the last action' },
-          ],
+          userMessage: createUserFriendlyMessage(category),
+          recoveryOptions: recoveryOptionsForCategory(category),
         },
       ];
     }

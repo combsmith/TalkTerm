@@ -403,7 +403,7 @@ describe('ClaudeSdkBackend', () => {
       expect(sdkMock.query).toHaveBeenCalledTimes(4);
     });
 
-    it('retries 3 times then yields error on persistent assistant error', async () => {
+    it('retries 3 times then yields classified auth error on persistent assistant authentication_failed error', async () => {
       const sdkMock = mockSdkModule([
         {
           type: 'assistant',
@@ -419,7 +419,33 @@ describe('ClaudeSdkBackend', () => {
 
       const errorEvents = events.filter((e) => e.type === 'error');
       expect(errorEvents).toHaveLength(1);
+      if (errorEvents[0]?.type === 'error') {
+        expect(errorEvents[0].userMessage).toContain('API key');
+        expect(errorEvents[0].recoveryOptions.some((o) => o.action === 'setup-key')).toBe(true);
+      }
       expect(sdkMock.query).toHaveBeenCalledTimes(4);
+    });
+
+    it('falls back to sdk-error category when assistant error string is unclassified', async () => {
+      const sdkMock = mockSdkModule([
+        {
+          type: 'assistant',
+          message: { content: [] },
+          error: 'server_error',
+          session_id: 'sess-42',
+        },
+      ]);
+      installSdkMock(sdkMock);
+
+      const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
+      const events = await collectEvents(backend.sendMessage('sess-42', 'hello'));
+
+      const errorEvents = events.filter((e) => e.type === 'error');
+      expect(errorEvents).toHaveLength(1);
+      if (errorEvents[0]?.type === 'error') {
+        expect(errorEvents[0].userMessage).toContain('Something unexpected happened');
+        expect(errorEvents[0].recoveryOptions.map((o) => o.action)).toEqual(['retry']);
+      }
     });
 
     it('retries 3 times then yields error when SDK stream throws', async () => {
@@ -485,6 +511,40 @@ describe('ClaudeSdkBackend', () => {
       const events = await collectEvents(backend.sendMessage('sess-cancel', 'long task'));
 
       expect(querySpy).toHaveBeenCalledTimes(1);
+      expect(events).toEqual([{ type: 'complete', summary: 'Cancelled by user' }]);
+    });
+
+    it('cancels sendMessage before sdk.query is invoked when cancelled during loadBmadContext', async () => {
+      const sdkMock = mockSdkModule([]);
+      installSdkMock(sdkMock);
+      const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
+
+      vi.spyOn(backend, 'loadBmadContext').mockImplementation(() => {
+        backend.cancelCurrentAction();
+        return Promise.resolve(null);
+      });
+
+      const events = await collectEvents(backend.sendMessage('sess-early-cancel', 'hello'));
+
+      expect(sdkMock.query).not.toHaveBeenCalled();
+      expect(events).toEqual([{ type: 'complete', summary: 'Cancelled by user' }]);
+    });
+
+    it('cancels startSession before sdk.query is invoked when cancelled during loadBmadContext', async () => {
+      const sdkMock = mockSdkModule([]);
+      installSdkMock(sdkMock);
+      const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
+
+      vi.spyOn(backend, 'loadBmadContext').mockImplementation(() => {
+        backend.cancelCurrentAction();
+        return Promise.resolve(null);
+      });
+
+      const events = await collectEvents(
+        backend.startSession({ workspacePath: '/tmp/proj', apiKey: 'sk-ant-test-key' }),
+      );
+
+      expect(sdkMock.query).not.toHaveBeenCalled();
       expect(events).toEqual([{ type: 'complete', summary: 'Cancelled by user' }]);
     });
   });
@@ -1203,7 +1263,7 @@ describe('ClaudeSdkBackend', () => {
       const readFileMock = vi.mocked(fsMock.readFile);
       // Workspace has no BMAD, but app root (process.cwd()) does
       readFileMock.mockImplementation((filePath: unknown) => {
-        const p = String(filePath);
+        const p = String(filePath).replaceAll('\\', '/');
         if (p.startsWith('/no-bmad-here')) {
           return Promise.reject(new Error('ENOENT'));
         }
@@ -1261,7 +1321,7 @@ describe('ClaudeSdkBackend', () => {
       const fsMock = await import('node:fs/promises');
       const readPaths: string[] = [];
       vi.mocked(fsMock.readFile).mockImplementation((filePath: unknown) => {
-        const p = String(filePath);
+        const p = String(filePath).replaceAll('\\', '/');
         readPaths.push(p);
         if (p.startsWith('/App/Resources') && p.endsWith('SKILL.md')) {
           return Promise.resolve('# Bundled Mary from {project-root}');

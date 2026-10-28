@@ -44,6 +44,19 @@ describe('detectContentType', () => {
     expect(detectContentType(table)).toBe('comparison-table');
   });
 
+  it('returns "document" when a markdown table is accompanied by surrounding prose or warnings', () => {
+    const tableWithWarning = [
+      'Warning: Do not apply these settings to production.',
+      '',
+      '| Setting | Staging | Production |',
+      '|---------|---------|------------|',
+      '| Debug   | true    | false      |',
+      '',
+      'Run `npm run verify` after updating staging.',
+    ].join('\n');
+    expect(detectContentType(tableWithWarning)).toBe('document');
+  });
+
   it('returns "plan" for numbered steps with checkboxes', () => {
     const plan = ['- [x] Set up project', '- [ ] Write tests', '- [ ] Deploy to production'].join(
       '\n',
@@ -125,6 +138,30 @@ describe('detectContentType (continued)', () => {
       '- PostgreSQL',
     ].join('\n');
     expect(detectContentType(clustered)).toBe('clustered-cards');
+  });
+
+  it('does not route to clustered-cards when surrounding prose would be discarded', () => {
+    const withTrailingNote = [
+      '**Frontend**',
+      '- React',
+      '- TypeScript',
+      '**Backend**',
+      '- Node.js',
+      '- PostgreSQL',
+      'Important: confirm database credentials before deploying.',
+    ].join('\n');
+    expect(detectContentType(withTrailingNote)).toBe('text');
+
+    const withLeadingProse = [
+      'Overview of stack:',
+      '**Frontend**',
+      '- React',
+      '- TypeScript',
+      '**Backend**',
+      '- Node.js',
+      '- PostgreSQL',
+    ].join('\n');
+    expect(detectContentType(withLeadingProse)).toBe('text');
   });
 
   it('prioritizes comparison-table over other types', () => {

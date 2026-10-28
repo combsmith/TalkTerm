@@ -17,10 +17,11 @@ export function isDocumentContent(text: string): boolean {
  * Returns the most likely rendering mode for the given markdown text.
  */
 export function detectContentType(text: string): ContentType {
-  // Check for markdown table patterns (pipe-delimited rows)
+  // Check for markdown table patterns (pipe-delimited rows). When surrounding prose/warnings
+  // accompany the table, fall back to the document view so non-table lines are not discarded.
   const tableLineCount = (text.match(/^\|.+\|$/gm) ?? []).length;
   if (tableLineCount >= 3) {
-    return 'comparison-table';
+    return isLosslessTable(text) ? 'comparison-table' : 'document';
   }
 
   // Check for plan-like content (numbered steps with headings or checkboxes). Only route to the
@@ -30,10 +31,11 @@ export function detectContentType(text: string): ContentType {
     return 'plan';
   }
 
-  // Check for clustered/categorized content (multiple bold headers with list items)
+  // Check for clustered/categorized content (multiple bold headers with list items). Only route
+  // to clustered cards when every line is represented in the parsed groups.
   const boldHeaders = (text.match(/^\*\*.+\*\*/gm) ?? []).length;
   const listItems = (text.match(/^[ \t]*[-*][ \t]+/gm) ?? []).length;
-  if (boldHeaders >= 2 && listItems >= 4) {
+  if (boldHeaders >= 2 && listItems >= 4 && isLosslessClustered(text)) {
     return 'clustered-cards';
   }
 
@@ -43,6 +45,31 @@ export function detectContentType(text: string): ContentType {
   }
 
   return 'text';
+}
+
+const TABLE_ROW_LINE = /^\|.+\|$/;
+const CLUSTER_HEADER_LINE = /^\*\*[^*]+\*\*$/;
+const CLUSTER_ITEM_LINE = /^[-*][ \t]+\S/;
+
+/** Check whether every non-empty line in `text` is part of the markdown table. */
+function isLosslessTable(text: string): boolean {
+  const lines = text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l !== '');
+  return lines.every((l) => TABLE_ROW_LINE.test(l));
+}
+
+/** Check whether every non-empty line in `text` is preserved by `parseClusteredContent`. */
+function isLosslessClustered(text: string): boolean {
+  const lines = text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l !== '');
+  if (!CLUSTER_HEADER_LINE.test(lines[0] ?? '')) {
+    return false;
+  }
+  return lines.every((l) => CLUSTER_HEADER_LINE.test(l) || CLUSTER_ITEM_LINE.test(l));
 }
 
 export interface TableData {
