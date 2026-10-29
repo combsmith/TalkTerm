@@ -303,15 +303,19 @@ describe('App', () => {
       workspaceSelected: true,
       workspacePath: '/saved/workspace',
     });
+    vi.mocked(window.electronAPI.getIncompleteSessions).mockResolvedValue([
+      { id: 'prev-1', workspacePath: '/saved/workspace', updatedAt: '2026-01-01T00:00:00Z' },
+    ]);
 
     render(<App />);
     passAdminCheck();
 
-    // Wait for SessionGreeting auto-advance (2000ms) into ConversationView
-    expect(
-      await screen.findByPlaceholderText(/speak to Mary/i, {}, { timeout: 3500 }),
-    ).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /start new session/i }));
+    expect(await screen.findByPlaceholderText(/speak to Mary/i)).toBeInTheDocument();
     expect(window.electronAPI.startSession).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(capturedAgentEventCallback).not.toBeNull();
+    });
 
     // Trigger auth error with setup-key recovery option
     act(() => {
@@ -328,7 +332,7 @@ describe('App', () => {
       });
     });
 
-    await user.click(screen.getByText('Re-enter API key'));
+    await user.click(await screen.findByText('Re-enter API key'));
     expect(screen.getByText('Get Started')).toBeInTheDocument();
 
     // Select subscription (or validate replacement key) -> returns straight to conversation without re-running profile setup
