@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef, type ReactElement } from 'react';
-import type { QuestionSet } from '../../../shared/types/domain/question-parser';
+import type { Question, QuestionSet } from '../../../shared/types/domain/question-parser';
 import { QuestionReview } from './QuestionReview';
 import { SuggestionChips } from './SuggestionChips';
 
@@ -9,6 +9,7 @@ interface QuestionCardStackProps {
   onSubmit: (aggregatedMessage: string) => void;
   onDismiss: () => void;
   spokenAnswer?: { text: string; seq: number } | null | undefined;
+  onActiveQuestionChange?: ((question: Question, index: number) => void) | undefined;
 }
 
 // --- Reducer ---
@@ -127,16 +128,19 @@ export function QuestionCardStack({
   onSubmit,
   onDismiss,
   spokenAnswer,
+  onActiveQuestionChange,
 }: QuestionCardStackProps): ReactElement {
   const total = questionSet.questions.length;
   const [state, dispatch] = useReducer(reducer, total, createInitialState);
   const prevQuestionSetRef = useRef(questionSet);
   const lastSpokenSeqRef = useRef(spokenAnswer?.seq ?? 0);
+  const prevActiveKeyRef = useRef('0:false');
 
   useEffect(() => {
     if (prevQuestionSetRef.current !== questionSet) {
       prevQuestionSetRef.current = questionSet;
       lastSpokenSeqRef.current = spokenAnswer?.seq ?? 0;
+      prevActiveKeyRef.current = '0:false';
       dispatch({ type: 'reset', total: questionSet.questions.length });
     }
   }, [questionSet, spokenAnswer?.seq]);
@@ -157,6 +161,18 @@ export function QuestionCardStack({
   }, [spokenAnswer, questionSet.questions.length]);
 
   const currentQuestion = questionSet.questions[state.currentIndex];
+
+  useEffect(() => {
+    const activeKey = `${String(state.currentIndex)}:${String(state.showReview)}`;
+    if (prevActiveKeyRef.current === activeKey) {
+      return;
+    }
+    prevActiveKeyRef.current = activeKey;
+    if (!state.showReview && currentQuestion !== undefined) {
+      onActiveQuestionChange?.(currentQuestion, state.currentIndex);
+    }
+  }, [state.currentIndex, state.showReview, currentQuestion, onActiveQuestionChange]);
+
   if (currentQuestion === undefined) {
     return <div data-testid="question-card-stack" />;
   }

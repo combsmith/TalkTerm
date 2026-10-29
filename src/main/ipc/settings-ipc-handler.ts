@@ -81,10 +81,13 @@ export class SettingsIPCHandler implements IPCRegistrar {
     ipcMain.handle(IPC_CHANNELS.PROFILE_SET, (_event: unknown, name: unknown) => {
       const validName = validateString(name, 'Profile name');
       const now = new Date().toISOString();
+      const existing = this.configStore.get('userProfile') as
+        | { name: string; avatarPersonaId: string | null; createdAt: string; updatedAt: string }
+        | undefined;
       this.configStore.set('userProfile', {
         name: validName,
-        avatarPersonaId: null,
-        createdAt: now,
+        avatarPersonaId: existing?.avatarPersonaId ?? null,
+        createdAt: existing?.createdAt ?? now,
         updatedAt: now,
       });
     });

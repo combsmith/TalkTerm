@@ -202,8 +202,16 @@ describe('SettingsIPCHandler', () => {
     const selectAvatar = handlers.get(IPC_CHANNELS.AVATAR_SELECT);
     selectAvatar?.({}, 'persona-123');
     const getProfile = handlers.get(IPC_CHANNELS.PROFILE_GET);
-    const profile = getProfile?.({}) as { avatarPersonaId: string } | undefined;
+    const profile = getProfile?.({}) as { avatarPersonaId: string; name: string } | undefined;
     expect(profile?.avatarPersonaId).toBe('persona-123');
+
+    // Updating the profile name preserves the existing avatarPersonaId
+    setProfile?.({}, 'Alice Updated');
+    const updatedProfile = getProfile?.({}) as
+      | { avatarPersonaId: string; name: string }
+      | undefined;
+    expect(updatedProfile?.name).toBe('Alice Updated');
+    expect(updatedProfile?.avatarPersonaId).toBe('persona-123');
   });
 
   it('throws error when selecting avatar with empty persona ID', () => {

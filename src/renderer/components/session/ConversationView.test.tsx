@@ -1074,4 +1074,52 @@ describe('ConversationView', () => {
     unmount();
     vi.useRealTimers();
   });
+
+  it('reads each active question aloud via TTS during live-mode guided answering (FR59)', () => {
+    render(<ConversationView userName="DJ" avatarName="Mary" sessionId="s1" />);
+
+    // Enter live mode first
+    act(() => {
+      screen.getByRole('button', { name: /start recording/i }).click();
+    });
+
+    // Structured question set arrives with preamble
+    simulateTextAndFlush(
+      'Quick check:\n1. **Platform** — Which platform are you targeting?\n2. **Timeline** — When do you need it?',
+    );
+    expect(mockTtsSpeak).toHaveBeenLastCalledWith('Quick check:', undefined);
+
+    // When preamble TTS finishes in live mode, question 1 is spoken aloud before mic capture restarts
+    act(() => {
+      mockTtsInstance.onEnd?.();
+    });
+    expect(mockTtsSpeak).toHaveBeenLastCalledWith(
+      'Platform — Which platform are you targeting?',
+      undefined,
+    );
+
+    // When question 1 TTS finishes, live-mode mic restarts after 300ms
+    vi.useFakeTimers();
+    mockSttInstance.isListening = false;
+    mockSttStart.mockClear();
+    act(() => {
+      mockTtsInstance.onEnd?.();
+    });
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    vi.useRealTimers();
+    expect(mockSttStart).toHaveBeenCalledTimes(1);
+
+    // User speaks answer to question 1 -> advances to question 2 and reads question 2 aloud
+    act(() => {
+      mockSttInstance.onResult?.({ transcript: 'iOS', isFinal: true });
+    });
+    expect(screen.getByTestId('question-progress')).toHaveTextContent('2 of 2');
+    expect(mockTtsSpeak).toHaveBeenLastCalledWith('Timeline — When do you need it?', undefined);
+
+    // Also cover empty-preamble question set in live mode
+    simulateTextAndFlush('1. **Auth** — OAuth or SSO?\n2. **DB** — Postgres or SQLite?');
+    expect(mockTtsSpeak).toHaveBeenLastCalledWith('Auth — OAuth or SSO?', undefined);
+  });
 });

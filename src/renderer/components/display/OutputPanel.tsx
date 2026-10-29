@@ -13,6 +13,16 @@ interface OutputPanelProps {
   onClose: () => void;
 }
 
+const RATING_CELL_RE = /^\s*([1-5](?:\.\d+)?)(?:\s*\/\s*5)?\s*$/;
+
+function parseRatingScore(cell: string): number | null {
+  const match = RATING_CELL_RE.exec(cell);
+  if (match === null) {
+    return null;
+  }
+  return Number.parseFloat(match[1] ?? '');
+}
+
 export function normalizeComparisonData(data: unknown): {
   rows: ComparisonRow[];
   criteria: string[];
@@ -27,14 +37,29 @@ export function normalizeComparisonData(data: unknown): {
   const headers = Array.isArray(record['headers']) ? (record['headers'] as string[]) : [];
   const rawRows = Array.isArray(record['rows']) ? (record['rows'] as string[][]) : [];
   const criteria = headers.slice(1);
+  const ratingCriteria = new Set<string>(
+    criteria.filter((_, idx) => {
+      const nonEmpty = rawRows
+        .map((cells) => (cells[idx + 1] ?? '').trim())
+        .filter((cell) => cell !== '');
+      return nonEmpty.length > 0 && nonEmpty.every((cell) => parseRatingScore(cell) !== null);
+    }),
+  );
+
   const rows: ComparisonRow[] = rawRows.map((cells) => {
     const name = cells[0] ?? '';
     const scores: Record<string, number> = {};
+    const values: Record<string, string> = {};
     const detailsParts: string[] = [];
     criteria.forEach((criterion, idx) => {
       const cell = cells[idx + 1] ?? '';
-      const parsedNum = Number.parseFloat(cell);
-      scores[criterion] = Number.isFinite(parsedNum) ? Math.min(5, Math.max(1, parsedNum)) : 3;
+      values[criterion] = cell;
+      if (ratingCriteria.has(criterion)) {
+        const rating = parseRatingScore(cell);
+        if (rating !== null) {
+          scores[criterion] = rating;
+        }
+      }
       if (cell !== '') {
         detailsParts.push(`${criterion}: ${cell}`);
       }
@@ -42,6 +67,7 @@ export function normalizeComparisonData(data: unknown): {
     return {
       name,
       scores,
+      values,
       ...(detailsParts.length > 0 ? { details: detailsParts.join(' · ') } : {}),
     };
   });

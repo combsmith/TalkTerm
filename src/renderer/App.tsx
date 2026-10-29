@@ -23,6 +23,7 @@ export function App(): ReactElement | null {
   const [phase, setPhase] = useState<AppPhase>('admin-check');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const [recoveringKey, setRecoveringKey] = useState(false);
   const [workspacePath, setWorkspacePath] = useState('');
   const [envKeyDetected, setEnvKeyDetected] = useState(false);
   const [adminResult, setAdminResult] = useState<AdminCheckResult | null>(null);
@@ -160,8 +161,17 @@ export function App(): ReactElement | null {
   // Setup phase — walk through setup steps
   if (phase === 'setup') {
     if (currentStep === 'needs-key') {
+      const finishKeyStep = (): void => {
+        if (recoveringKey || sessionId !== null) {
+          setRecoveringKey(false);
+          setPhase('conversation');
+          return;
+        }
+        completeCurrentStep();
+      };
       return (
         <ApiKeySetup
+          initialState={recoveringKey ? 'expired' : 'empty'}
           detectedEnvKey={envKeyDetected}
           onValidated={(key: string) =>
             // Propagate storage failures (e.g. OS encryption unavailable) back to ApiKeySetup
@@ -170,17 +180,18 @@ export function App(): ReactElement | null {
               window.electronAPI.storeApiKey(key),
               window.electronAPI.setAuthMode('api-key'),
             ]).then(() => {
-              completeCurrentStep();
+              finishKeyStep();
             })
           }
           onSubscriptionSelected={() => {
             void window.electronAPI
               .setAuthMode('claude-subscription')
               .then(() => {
-                completeCurrentStep();
+                finishKeyStep();
               })
               .catch(() => {
                 // Auth mode IPC failure — proceed; mode is best-effort
+                finishKeyStep();
               });
           }}
         />
@@ -301,6 +312,7 @@ export function App(): ReactElement | null {
       avatarName="Mary"
       sessionId={sessionId ?? ''}
       onSetupKey={() => {
+        setRecoveringKey(true);
         goToStep('needs-key');
         setPhase('setup');
       }}

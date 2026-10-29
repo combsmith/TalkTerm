@@ -96,6 +96,23 @@ describe('OutputPanel', () => {
     expect(screen.getByText('Comparison')).toBeInTheDocument();
     expect(screen.getByText('Vite')).toBeInTheDocument();
     expect(screen.getByText('Webpack')).toBeInTheDocument();
+    expect(screen.getByText('Easy')).toBeInTheDocument();
+    expect(screen.getByText('Complex')).toBeInTheDocument();
+  });
+
+  it('preserves raw measurements in ordinary tables without inventing 1-5 scores', () => {
+    const latencyTable = {
+      headers: ['Service', 'Latency', 'Cost'],
+      rows: [
+        ['Cache', '10 ms', '$5/mo'],
+        ['Primary DB', '1000 ms', '$120/mo'],
+      ],
+    };
+    render(<OutputPanel mode="comparison-table" data={latencyTable} onClose={vi.fn()} />);
+    expect(screen.getByText('10 ms')).toBeInTheDocument();
+    expect(screen.getByText('1000 ms')).toBeInTheDocument();
+    expect(screen.getByText('$5/mo')).toBeInTheDocument();
+    expect(screen.getByText('$120/mo')).toBeInTheDocument();
   });
 
   it('renders parsed clustered groups in clustered-cards mode', () => {

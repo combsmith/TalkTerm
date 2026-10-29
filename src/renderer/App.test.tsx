@@ -282,4 +282,60 @@ describe('App', () => {
     expect(await screen.findByText(/Hey ReturningAlice/i)).toBeInTheDocument();
     expect(window.electronAPI.getIncompleteSessions).toHaveBeenCalledWith('/saved/workspace');
   });
+
+  it('returns directly to the active conversation after replacing an expired API key', async () => {
+    vi.stubGlobal(
+      'SpeechSynthesisUtterance',
+      class {
+        text = '';
+      },
+    );
+    const user = userEvent.setup();
+    let capturedAgentEventCallback: ((event: unknown) => void) | null = null;
+    vi.mocked(window.electronAPI.onAgentEvent).mockImplementation((cb) => {
+      capturedAgentEventCallback = cb as (event: unknown) => void;
+      return vi.fn();
+    });
+    vi.mocked(window.electronAPI.assessLaunchState).mockResolvedValue({
+      apiKeyValid: true,
+      profileComplete: true,
+      avatarSelected: true,
+      workspaceSelected: true,
+      workspacePath: '/saved/workspace',
+    });
+
+    render(<App />);
+    passAdminCheck();
+
+    // Wait for SessionGreeting auto-advance (2000ms) into ConversationView
+    expect(
+      await screen.findByPlaceholderText(/speak to Mary/i, {}, { timeout: 3500 }),
+    ).toBeInTheDocument();
+    expect(window.electronAPI.startSession).toHaveBeenCalledTimes(1);
+
+    // Trigger auth error with setup-key recovery option
+    act(() => {
+      capturedAgentEventCallback?.({
+        type: 'error',
+        userMessage: 'API key rejected',
+        recoveryOptions: [
+          {
+            label: 'Re-enter API key',
+            description: 'Update your Anthropic API key',
+            action: 'setup-key',
+          },
+        ],
+      });
+    });
+
+    await user.click(screen.getByText('Re-enter API key'));
+    expect(screen.getByText('Get Started')).toBeInTheDocument();
+
+    // Select subscription (or validate replacement key) -> returns straight to conversation without re-running profile setup
+    await user.click(screen.getByText(/Claude Pro \/ Max Subscription/));
+    expect(await screen.findByPlaceholderText(/speak to Mary/i)).toBeInTheDocument();
+    expect(screen.queryByText(/What should I call you/i)).not.toBeInTheDocument();
+    // Existing session is preserved rather than starting a second session
+    expect(window.electronAPI.startSession).toHaveBeenCalledTimes(1);
+  }, 10000);
 });

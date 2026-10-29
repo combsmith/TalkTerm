@@ -44,33 +44,9 @@ export function parseQuestions(text: string): QuestionSet | null {
   return parseNumberedQuestions(text) ?? parseDashListQuestions(text);
 }
 
-/** Collect lines belonging to one numbered block, stopping at trailing-text boundary. */
-function collectBlockLines(
-  lines: string[],
-  start: number,
-  end: number,
-  isLastItem: boolean,
-): string[] {
-  const blockLines: string[] = [];
-  for (let j = start; j < end; j++) {
-    const line = lines[j] ?? '';
-    if (
-      j > start &&
-      line.trim() !== '' &&
-      !line.startsWith('-') &&
-      !line.startsWith(' ') &&
-      !line.startsWith('\t')
-    ) {
-      if (isLastItem) {
-        const prevLine = lines[j - 1];
-        if (j > 0 && prevLine !== undefined && prevLine.trim() === '') {
-          break;
-        }
-      }
-    }
-    blockLines.push(line);
-  }
-  return blockLines;
+/** Collect lines belonging to one numbered block, preserving any trailing instructions. */
+function collectBlockLines(lines: string[], start: number, end: number): string[] {
+  return lines.slice(start, end);
 }
 
 /** Extract the text after a leading `- ` or `* ` marker, or null if not a list item. */
@@ -117,8 +93,7 @@ function parseNumberedQuestions(text: string): QuestionSet | null {
     const start = numberedIndices[i] ?? 0;
     const nextIdx = numberedIndices[i + 1];
     const end = nextIdx !== undefined ? nextIdx : lines.length;
-    const isLastItem = i === numberedIndices.length - 1;
-    blocks.push(collectBlockLines(lines, start, end, isLastItem));
+    blocks.push(collectBlockLines(lines, start, end));
   }
 
   // Question-ness heuristic: at least one numbered block must contain a question mark
@@ -143,9 +118,9 @@ function parseNumberedQuestions(text: string): QuestionSet | null {
   return { preamble, questions };
 }
 
-/** Return the section label if the trimmed line is a bold section header, or null. */
+/** Return the section label if the trimmed line is a standalone bold section header, or null. */
 function detectSectionHeader(trimmed: string): string | null {
-  const sectionMatch = /^\*\*(.+?)\*\*/.exec(trimmed);
+  const sectionMatch = /^\*\*(.+?)\*\*\s*:?\s*$/.exec(trimmed);
   if (sectionMatch !== null && !trimmed.startsWith('-') && !trimmed.startsWith('*  ')) {
     const captured = sectionMatch[1];
     if (captured !== undefined) {
@@ -155,16 +130,27 @@ function detectSectionHeader(trimmed: string): string | null {
   return null;
 }
 
-/** Return index of first line that is a bold header or a question list item. */
+/** Return index of first line that is a standalone bold header or a top-level question list item. */
 function findPreambleEnd(lines: string[]): number {
   for (let i = 0; i < lines.length; i++) {
-    const trimmed = (lines[i] ?? '').trim();
+    const line = lines[i] ?? '';
+    if (line.startsWith(' ') || line.startsWith('\t')) {
+      continue;
+    }
+    const trimmed = line.trim();
     const itemText = extractListItemText(trimmed);
-    if (/^\*\*(.+?)\*\*/.test(trimmed) || (itemText !== null && itemText.includes('?'))) {
+    if (detectSectionHeader(trimmed) !== null || (itemText !== null && itemText.includes('?'))) {
       return i;
     }
   }
   return lines.length;
+}
+
+interface DashQuestionBlock {
+  text: string;
+  rawLine: string;
+  section: string;
+  continuationLines: string[];
 }
 
 /**
@@ -175,43 +161,90 @@ function findPreambleEnd(lines: string[]): number {
  *   - Do you have a preferred stack?
  *   **Users & roles:**
  *   - Are you thinking three user types?
+ * Preserves indented continuation lines, option sub-bullets, and trailing instructions on each
+ * question card, or returns null when non-question content before the first question would be lost.
  */
 function parseDashListQuestions(text: string): QuestionSet | null {
   const lines = text.split('\n');
+  const preambleEnd = findPreambleEnd(lines);
 
-  // Find all dash-list lines that contain a question mark
-  const questionLines: Array<{ lineIndex: number; text: string; section: string }> = [];
+  const questionBlocks: DashQuestionBlock[] = [];
   let currentSection = '';
+  let pendingSection: { headerLine: string; sectionName: string } | null = null;
+  let currentQuestion: DashQuestionBlock | undefined;
 
-  for (let i = 0; i < lines.length; i++) {
+  for (let i = preambleEnd; i < lines.length; i++) {
     const line = lines[i] ?? '';
     const trimmed = line.trim();
+    if (trimmed === '') {
+      if (currentQuestion !== undefined && currentQuestion.continuationLines.length > 0) {
+        currentQuestion.continuationLines.push('');
+      }
+      continue;
+    }
 
-    const newSection = detectSectionHeader(trimmed);
+    const isIndented = line.startsWith(' ') || line.startsWith('\t');
+    const newSection = !isIndented ? detectSectionHeader(trimmed) : null;
     if (newSection !== null) {
-      currentSection = newSection;
+      if (pendingSection !== null) {
+        if (currentQuestion === undefined) {
+          return null;
+        }
+        currentQuestion.continuationLines.push(pendingSection.headerLine);
+      }
+      pendingSection = { headerLine: line, sectionName: newSection };
+      continue;
     }
 
-    // Detect dash-list or asterisk-list items that look like questions
-    const itemText = extractListItemText(trimmed);
+    const itemText = !isIndented ? extractListItemText(trimmed) : null;
     if (itemText !== null && itemText.includes('?')) {
-      questionLines.push({ lineIndex: i, text: itemText, section: currentSection });
+      if (pendingSection !== null) {
+        currentSection = pendingSection.sectionName;
+        pendingSection = null;
+      }
+      currentQuestion = {
+        text: itemText,
+        rawLine: line,
+        section: currentSection,
+        continuationLines: [],
+      };
+      questionBlocks.push(currentQuestion);
+      continue;
     }
+
+    // Continuation line, indented option sub-bullet, or trailing instruction:
+    // if no question has started yet, we cannot attach it to a card without losing ordering/context.
+    if (currentQuestion === undefined) {
+      return null;
+    }
+    if (pendingSection !== null) {
+      currentQuestion.continuationLines.push(pendingSection.headerLine);
+      pendingSection = null;
+    }
+    currentQuestion.continuationLines.push(line);
   }
 
-  if (questionLines.length < 2) return null;
+  if (pendingSection !== null) {
+    if (currentQuestion === undefined) {
+      return null;
+    }
+    currentQuestion.continuationLines.push(pendingSection.headerLine);
+  }
 
-  const preamble = lines.slice(0, findPreambleEnd(lines)).join('\n').trim();
+  if (questionBlocks.length < 2) return null;
 
-  // Convert each question line into a Question
-  const questions: Question[] = questionLines.map((q, i) => {
+  const preamble = lines.slice(0, preambleEnd).join('\n').trim();
+
+  // Convert each question block into a Question, preserving continuation lines and sub-options
+  const questions: Question[] = questionBlocks.map((q, i) => {
     const title = extractTitle(q.text);
     const sectionPrefix = q.section !== '' ? `${q.section}: ` : '';
+    const body = [q.text, ...q.continuationLines].join('\n').trim();
     return {
       index: i + 1,
       title: sectionPrefix + title,
-      body: q.text,
-      suggestions: [],
+      body,
+      suggestions: extractSuggestions([q.rawLine, ...q.continuationLines]),
     };
   });
 

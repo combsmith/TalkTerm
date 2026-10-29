@@ -205,6 +205,32 @@ export function ConversationView({
     }
   }, [liveMode, avatarState]); // eslint-disable-line react-hooks/exhaustive-deps -- handleSendInternal is stable
 
+  // Speak the active question aloud during live-mode guided answering (FR59)
+  const speakActiveQuestion = useCallback(
+    (questionBody: string): void => {
+      if (!liveModeRef.current) {
+        return;
+      }
+      clearRestartListeningTimer();
+      sttRef.current?.stop();
+      const plainQuestion = stripMarkdown(questionBody);
+      setAvatarState('speaking');
+      setCaption(plainQuestion);
+      setIsCaptionVisible(true);
+      if (ttsRef.current !== null) {
+        ttsRef.current.onEnd = (): void => {
+          setAvatarState('ready');
+          scheduleLiveModeRestart();
+        };
+        ttsRef.current.speak(plainQuestion, voiceRef.current);
+      } else {
+        setAvatarState('ready');
+        scheduleLiveModeRestart();
+      }
+    },
+    [clearRestartListeningTimer, scheduleLiveModeRestart],
+  );
+
   // Flush accumulated text — parse as cards or display as plain text
   const flushPendingText = useCallback((): void => {
     const text = pendingTextRef.current;
@@ -222,26 +248,37 @@ export function ConversationView({
       pendingTextRef.current = '';
       setSpokenQuestionAnswer(null);
       setActiveQuestionSet(parsed);
+      const firstQuestion = parsed.kind !== 'menu' ? parsed.questions[0] : undefined;
 
       // If preamble is long enough for a document, show it in DocumentView
       if (isDocumentContent(parsed.preamble)) {
         displayModeRef.current = 'none';
         displayMode.clear();
         setActiveDocument(parsed.preamble);
-        setAvatarState('ready');
-        setCaption(null);
-        setIsCaptionVisible(false);
-        scheduleLiveModeRestart();
+        if (liveModeRef.current && firstQuestion !== undefined) {
+          speakActiveQuestion(firstQuestion.body);
+        } else {
+          setAvatarState('ready');
+          setCaption(null);
+          setIsCaptionVisible(false);
+          scheduleLiveModeRestart();
+        }
       } else {
         setAvatarState(parsed.preamble !== '' ? 'speaking' : 'ready');
         setCaption(parsed.preamble !== '' ? parsed.preamble : null);
         setIsCaptionVisible(parsed.preamble !== '');
         if (ttsRef.current !== null && parsed.preamble !== '') {
           ttsRef.current.onEnd = (): void => {
+            if (liveModeRef.current && firstQuestion !== undefined) {
+              speakActiveQuestion(firstQuestion.body);
+              return;
+            }
             setAvatarState('ready');
             scheduleLiveModeRestart();
           };
           ttsRef.current.speak(parsed.preamble, voiceRef.current);
+        } else if (liveModeRef.current && firstQuestion !== undefined) {
+          speakActiveQuestion(firstQuestion.body);
         } else {
           scheduleLiveModeRestart();
         }
@@ -834,6 +871,9 @@ export function ConversationView({
               onSubmit={handleQuestionSubmit}
               onDismiss={handleQuestionDismiss}
               spokenAnswer={spokenQuestionAnswer}
+              onActiveQuestionChange={(question) => {
+                speakActiveQuestion(question.body);
+              }}
             />
           )}
         </div>

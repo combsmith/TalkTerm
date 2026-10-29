@@ -298,4 +298,42 @@ describe('parseQuestions', () => {
     expect(result?.questions[0]?.title).toContain('Core concept');
     expect(result?.questions[2]?.title).toContain('Key features');
   });
+
+  it('preserves indented continuation lines, sub-bullet options, and trailing instructions in dash-list questions', () => {
+    const text = [
+      'Before deploying, please clarify:',
+      '- Which environment should we target?',
+      '  Staging only — production deployments are frozen until Monday.',
+      '  - staging-us-east',
+      '  - staging-eu-west',
+      '- Which service should roll out first?',
+      '',
+      '**Important reminder:**',
+      'All migrations must complete before traffic shifts.',
+    ].join('\n');
+
+    const result = parseQuestions(text);
+    expect(result).not.toBeNull();
+    expect(result?.preamble).toBe('Before deploying, please clarify:');
+    expect(result?.questions).toHaveLength(2);
+    expect(result?.questions[0]?.body).toContain(
+      'Staging only — production deployments are frozen until Monday.',
+    );
+    expect(result?.questions[0]?.suggestions).toEqual(['staging-us-east', 'staging-eu-west']);
+    expect(result?.questions[1]?.body).toContain('**Important reminder:**');
+    expect(result?.questions[1]?.body).toContain(
+      'All migrations must complete before traffic shifts.',
+    );
+  });
+
+  it('returns null for dash-list questions when non-question content precedes the first question after a section header', () => {
+    const text = [
+      '**Deployment notes:**',
+      'Production is frozen until Monday.',
+      '- Which environment?',
+      '- Which region?',
+    ].join('\n');
+
+    expect(parseQuestions(text)).toBeNull();
+  });
 });

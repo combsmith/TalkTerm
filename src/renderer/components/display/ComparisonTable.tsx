@@ -3,6 +3,7 @@ import { useState, type ReactElement } from 'react';
 export interface ComparisonRow {
   name: string;
   scores: Record<string, number>;
+  values?: Record<string, string>;
   details?: string;
   isWinner?: boolean;
 }
@@ -40,16 +41,22 @@ export function ComparisonTable({ rows, criteria }: ComparisonTableProps): React
           </button>
           <div className="mt-2 flex gap-2">
             {criteria.map((c) => {
+              const rawValue = row.values?.[c];
+              const hasScore = Object.prototype.hasOwnProperty.call(row.scores, c);
               const score = row.scores[c] ?? 0;
               return (
                 <div key={c} className="flex flex-1 flex-col gap-1">
                   <span className="text-caption text-text-muted-on-dark">{c}</span>
-                  <div className="h-2 rounded-full bg-surface-muted">
-                    <div
-                      className={`h-full rounded-full ${scoreColor(score)}`}
-                      style={{ width: `${String(score * 20)}%` }}
-                    />
-                  </div>
+                  {hasScore || rawValue === undefined ? (
+                    <div className="h-2 rounded-full bg-surface-muted">
+                      <div
+                        className={`h-full rounded-full ${scoreColor(score)}`}
+                        style={{ width: `${String(score * 20)}%` }}
+                      />
+                    </div>
+                  ) : (
+                    <span className="text-small text-text-on-dark">{rawValue}</span>
+                  )}
                 </div>
               );
             })}
