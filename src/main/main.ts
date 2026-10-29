@@ -12,7 +12,7 @@ import { SpeechIPCHandler } from './ipc/speech-ipc-handler';
 import { checkAdminPrivileges, type AdminCheckResult } from './security/admin-check';
 import { SafeStorageKeyManager } from './security/safe-storage-key-manager';
 import { SherpaOnnxStt } from './speech/sherpa-onnx-stt';
-import { initializeDatabase } from './storage/database-initializer';
+import { initializeDatabase, type Database } from './storage/database-initializer';
 import { ElectronConfigStore } from './storage/electron-config-store';
 import { MemoryIndexStore } from './storage/memory-index-store';
 import { SqliteAuditRepository } from './storage/sqlite-audit-repository';
@@ -121,21 +121,38 @@ function createMainWindow(adminResult: AdminCheckResult): void {
   });
 }
 
+function openDatabase(dbPath: string): Database {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- native module
+    const BetterSqlite3 = require('better-sqlite3') as typeof import('better-sqlite3');
+    const db = new BetterSqlite3(dbPath);
+    db.pragma('journal_mode = WAL');
+    return db;
+  } catch {
+    // Fallback to Node 24's built-in node:sqlite when better-sqlite3's native binary
+    // was compiled against the host Node ABI instead of Electron's ABI (e.g. E2E tests).
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- built-in module fallback
+    const { DatabaseSync } = require('node:sqlite') as {
+      DatabaseSync: new (path: string) => Database;
+    };
+    const db = new DatabaseSync(dbPath);
+    db.exec('PRAGMA journal_mode = WAL');
+    return db;
+  }
+}
+
 function bootstrap(): void {
   // 1. Admin privilege check
   const adminResult = checkAdminPrivileges();
   cachedAdminResult = adminResult;
 
-  // 2. Initialize persistence with real better-sqlite3 and persistent config store
-  // eslint-disable-next-line @typescript-eslint/no-require-imports -- native module
-  const BetterSqlite3 = require('better-sqlite3') as typeof import('better-sqlite3');
+  // 2. Initialize persistence with real better-sqlite3 (or node:sqlite fallback) and persistent config store
   const envUserData = process.env['ELECTRON_USER_DATA_DIR'];
   const userDataDir =
     envUserData !== undefined && envUserData !== '' ? envUserData : app.getPath('userData');
   fs.mkdirSync(userDataDir, { recursive: true });
   const dbPath = path.join(userDataDir, 'talkterm.db');
-  const db = new BetterSqlite3(dbPath);
-  db.pragma('journal_mode = WAL');
+  const db = openDatabase(dbPath);
   initializeDatabase(db);
   const sessionRepo = new SqliteSessionRepository(db);
   const auditRepo = new SqliteAuditRepository(db);

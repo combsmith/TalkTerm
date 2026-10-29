@@ -7,7 +7,12 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
-      external: ['better-sqlite3', '@anthropic-ai/claude-agent-sdk', 'sherpa-onnx-node'],
+      external: [
+        'better-sqlite3',
+        'node:sqlite',
+        '@anthropic-ai/claude-agent-sdk',
+        'sherpa-onnx-node',
+      ],
     },
   },
 });

@@ -1,15 +1,20 @@
 import { test, expect } from '@playwright/test';
 
+async function goToApiKeyEntry(page: import('@playwright/test').Page): Promise<void> {
+  await page.goto('/');
+  await page.getByRole('button', { name: /anthropic api key/i }).click();
+}
+
 // ---------------------------------------------------------------------------
 // FR40: API Key Entry Flow
 // ---------------------------------------------------------------------------
 test.describe('FR40: API Key Entry Flow', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await goToApiKeyEntry(page);
   });
 
   test('shows API key setup as first screen with heading and input', async ({ page }) => {
-    await expect(page.getByRole('heading', { level: 1, name: 'Get Started' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Enter API Key' })).toBeVisible();
     await expect(page.getByPlaceholder('sk-ant-api03-...')).toBeVisible();
   });
 
@@ -39,9 +44,7 @@ test.describe('FR40: API Key Entry Flow', () => {
     const input = page.getByPlaceholder('sk-ant-api03-...');
     await input.fill('sk-ant-oat-something');
     await page.getByRole('button', { name: /validate api key/i }).click();
-    await expect(
-      page.getByText(/subscription token.*TalkTerm needs an API key instead/i),
-    ).toBeVisible();
+    await expect(page.getByText(/Claude subscription token.*Claude Pro\/Max/i)).toBeVisible();
   });
 
   test('entering valid key (sk-ant-api...) shows success indicator', async ({ page }) => {
@@ -89,7 +92,7 @@ test.describe('FR40: API Key Entry Flow', () => {
 test.describe('FR36: Profile Setup', () => {
   test.beforeEach(async ({ page }) => {
     // Navigate through API key step to reach profile setup
-    await page.goto('/');
+    await goToApiKeyEntry(page);
     const input = page.getByPlaceholder('sk-ant-api03-...');
     await input.fill('sk-ant-api03-valid-key-here');
     await page.getByRole('button', { name: /validate api key/i }).click();
@@ -113,19 +116,15 @@ test.describe('FR36: Profile Setup', () => {
     const continueBtn = page.getByRole('button', { name: /continue/i });
     await expect(continueBtn).toBeEnabled();
     await continueBtn.click();
-    // Should advance to avatar selection
-    await expect(
-      page.getByRole('heading', { level: 1, name: /choose your team member/i }),
-    ).toBeVisible();
+    // Should advance to workspace selection
+    await expect(page.getByRole('heading', { level: 1, name: /connect a project/i })).toBeVisible();
   });
 
   test('pressing Enter submits the form', async ({ page }) => {
     await page.getByPlaceholder('Your name').fill('Bob');
     await page.keyboard.press('Enter');
-    // Should advance to avatar selection
-    await expect(
-      page.getByRole('heading', { level: 1, name: /choose your team member/i }),
-    ).toBeVisible();
+    // Should advance to workspace selection
+    await expect(page.getByRole('heading', { level: 1, name: /connect a project/i })).toBeVisible();
   });
 });
 
@@ -134,14 +133,16 @@ test.describe('FR36: Profile Setup', () => {
 // ---------------------------------------------------------------------------
 test.describe('FR1/FR5: Avatar Selection', () => {
   test.beforeEach(async ({ page }) => {
-    // Navigate through API key + profile steps
-    await page.goto('/');
+    // Navigate through API key + profile + workspace steps
+    await goToApiKeyEntry(page);
     const apiInput = page.getByPlaceholder('sk-ant-api03-...');
     await apiInput.fill('sk-ant-api03-valid-key-here');
     await page.getByRole('button', { name: /validate api key/i }).click();
     await expect(page.getByPlaceholder('Your name')).toBeVisible({ timeout: 5000 });
     await page.getByPlaceholder('Your name').fill('TestUser');
     await page.getByRole('button', { name: /continue/i }).click();
+    await expect(page.getByRole('heading', { level: 1, name: /connect a project/i })).toBeVisible();
+    await page.getByRole('button', { name: /skip/i }).click();
     await expect(
       page.getByRole('heading', { level: 1, name: /choose your team member/i }),
     ).toBeVisible();
@@ -157,9 +158,9 @@ test.describe('FR1/FR5: Avatar Selection', () => {
     await expect(page.getByText(/friendly AI project partner/i)).toBeVisible();
   });
 
-  test('can select a persona and advance to workspace selection', async ({ page }) => {
+  test('can select a persona and advance to session greeting', async ({ page }) => {
     await page.getByRole('button', { name: /select mary/i }).click();
-    await expect(page.getByRole('heading', { level: 1, name: /connect a project/i })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: /hey/i })).toBeVisible();
   });
 });
 
@@ -168,18 +169,14 @@ test.describe('FR1/FR5: Avatar Selection', () => {
 // ---------------------------------------------------------------------------
 test.describe('FR52/FR53: Workspace Selection', () => {
   test.beforeEach(async ({ page }) => {
-    // Navigate through API key + profile + avatar steps
-    await page.goto('/');
+    // Navigate through API key + profile steps
+    await goToApiKeyEntry(page);
     const apiInput = page.getByPlaceholder('sk-ant-api03-...');
     await apiInput.fill('sk-ant-api03-valid-key-here');
     await page.getByRole('button', { name: /validate api key/i }).click();
     await expect(page.getByPlaceholder('Your name')).toBeVisible({ timeout: 5000 });
     await page.getByPlaceholder('Your name').fill('TestUser');
     await page.getByRole('button', { name: /continue/i }).click();
-    await expect(
-      page.getByRole('heading', { level: 1, name: /choose your team member/i }),
-    ).toBeVisible();
-    await page.getByRole('button', { name: /select mary/i }).click();
     await expect(page.getByRole('heading', { level: 1, name: /connect a project/i })).toBeVisible();
   });
 
@@ -189,17 +186,21 @@ test.describe('FR52/FR53: Workspace Selection', () => {
     await expect(page.getByRole('button', { name: /skip/i })).toBeVisible();
   });
 
-  test('Skip proceeds to session greeting without selecting workspace', async ({ page }) => {
+  test('Skip proceeds to avatar selection without selecting workspace', async ({ page }) => {
     await page.getByRole('button', { name: /skip/i }).click();
-    // Should advance to greeting screen
-    await expect(page.getByRole('heading', { level: 1, name: /hey/i })).toBeVisible();
+    // Should advance to avatar selection screen
+    await expect(
+      page.getByRole('heading', { level: 1, name: /choose your team member/i }),
+    ).toBeVisible();
   });
 
-  test('Entering a path and submitting proceeds to session greeting', async ({ page }) => {
+  test('Entering a path and submitting proceeds to avatar selection', async ({ page }) => {
     await page.getByPlaceholder(/path\/to\/your\/project/i).fill('/home/user/my-project');
     await page.getByRole('button', { name: /select folder/i }).click();
     // Shows confirmation then advances
-    await expect(page.getByRole('heading', { level: 1, name: /hey/i })).toBeVisible({
+    await expect(
+      page.getByRole('heading', { level: 1, name: /choose your team member/i }),
+    ).toBeVisible({
       timeout: 5000,
     });
   });
@@ -211,19 +212,19 @@ test.describe('FR52/FR53: Workspace Selection', () => {
 test.describe('FR33: Session Greeting', () => {
   test.beforeEach(async ({ page }) => {
     // Navigate through entire setup flow to reach greeting
-    await page.goto('/');
+    await goToApiKeyEntry(page);
     const apiInput = page.getByPlaceholder('sk-ant-api03-...');
     await apiInput.fill('sk-ant-api03-valid-key-here');
     await page.getByRole('button', { name: /validate api key/i }).click();
     await expect(page.getByPlaceholder('Your name')).toBeVisible({ timeout: 5000 });
     await page.getByPlaceholder('Your name').fill('Alice');
     await page.getByRole('button', { name: /continue/i }).click();
+    await expect(page.getByRole('heading', { level: 1, name: /connect a project/i })).toBeVisible();
+    await page.getByRole('button', { name: /skip/i }).click();
     await expect(
       page.getByRole('heading', { level: 1, name: /choose your team member/i }),
     ).toBeVisible();
     await page.getByRole('button', { name: /select mary/i }).click();
-    await expect(page.getByRole('heading', { level: 1, name: /connect a project/i })).toBeVisible();
-    await page.getByRole('button', { name: /skip/i }).click();
   });
 
   test('greeting shows the user name', async ({ page }) => {
@@ -244,6 +245,7 @@ test.describe('Full Setup Flow Journey', () => {
 
     // Step 1: API Key
     await expect(page.getByRole('heading', { level: 1, name: 'Get Started' })).toBeVisible();
+    await page.getByRole('button', { name: /anthropic api key/i }).click();
     await page.getByPlaceholder('sk-ant-api03-...').fill('sk-ant-api03-valid-key-here');
     await page.getByRole('button', { name: /validate api key/i }).click();
     await expect(page.getByText(/Key verified/i)).toBeVisible();
@@ -255,15 +257,15 @@ test.describe('Full Setup Flow Journey', () => {
     await page.getByPlaceholder('Your name').fill('EndToEndUser');
     await page.getByRole('button', { name: /continue/i }).click();
 
-    // Step 3: Avatar
+    // Step 3: Workspace
+    await expect(page.getByRole('heading', { level: 1, name: /connect a project/i })).toBeVisible();
+    await page.getByRole('button', { name: /skip/i }).click();
+
+    // Step 4: Avatar
     await expect(
       page.getByRole('heading', { level: 1, name: /choose your team member/i }),
     ).toBeVisible();
     await page.getByRole('button', { name: /select mary/i }).click();
-
-    // Step 4: Workspace
-    await expect(page.getByRole('heading', { level: 1, name: /connect a project/i })).toBeVisible();
-    await page.getByRole('button', { name: /skip/i }).click();
 
     // Step 5: Greeting
     await expect(page.getByRole('heading', { level: 1, name: /hey endtoenduser/i })).toBeVisible();
@@ -282,14 +284,14 @@ test.describe('Accessibility', () => {
   });
 
   test('form inputs are keyboard accessible', async ({ page }) => {
-    await page.goto('/');
+    await goToApiKeyEntry(page);
     await page.keyboard.press('Tab');
     const focused = page.locator(':focus');
     await expect(focused).toBeVisible();
   });
 
   test('API key input is auto-focused on mount', async ({ page }) => {
-    await page.goto('/');
+    await goToApiKeyEntry(page);
     const input = page.getByPlaceholder('sk-ant-api03-...');
     await expect(input).toBeFocused();
   });

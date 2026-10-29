@@ -1,14 +1,19 @@
 import { test, expect } from '@playwright/test';
 
+async function goToApiKeyEntry(page: import('@playwright/test').Page): Promise<void> {
+  await page.goto('/');
+  await page.getByRole('button', { name: /anthropic api key/i }).click();
+}
+
 test.describe('Setup Flow Accessibility', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await goToApiKeyEntry(page);
   });
 
   test('page has exactly one h1 heading', async ({ page }) => {
     const h1Elements = page.getByRole('heading', { level: 1 });
     await expect(h1Elements).toHaveCount(1);
-    await expect(h1Elements).toHaveText('Get Started');
+    await expect(h1Elements).toHaveText('Enter API Key');
   });
 
   test('API key input has an accessible placeholder acting as label', async ({ page }) => {
@@ -38,19 +43,23 @@ test.describe('Setup Flow Accessibility', () => {
     // The input is auto-focused on mount
     const input = page.getByPlaceholder('sk-ant-api03-...');
     await expect(input).toBeFocused();
-
-    // Tab to the validate button
-    await page.keyboard.press('Tab');
-    const validateBtn = page.getByRole('button', { name: /validate api key/i });
-    await expect(validateBtn).toBeFocused();
+    await input.fill('sk-ant-api03-test');
 
     // Tab to the external link
     await page.keyboard.press('Tab');
     const link = page.locator('a[href*="console.anthropic.com"]');
     await expect(link).toBeFocused();
+
+    // Tab to the validate button
+    await page.keyboard.press('Tab');
+    const validateBtn = page.getByRole('button', { name: /validate api key/i });
+    await expect(validateBtn).toBeFocused();
   });
 
   test('focus indicators are visible on interactive elements', async ({ page }) => {
+    const input = page.getByPlaceholder('sk-ant-api03-...');
+    await input.fill('sk-ant-api03-test');
+
     // Tab to the validate button and verify it has visible focus styling
     await page.keyboard.press('Tab');
     await page.keyboard.press('Tab');
@@ -83,7 +92,7 @@ test.describe('Setup Flow Accessibility', () => {
     await btn.click();
 
     // Success indicator should appear
-    const successMsg = page.locator('p.text-semantic-success');
+    const successMsg = page.locator('p.text-semantic-success').first();
     await expect(successMsg).toBeVisible({ timeout: 5000 });
     await expect(successMsg).toContainText('Key verified');
   });
@@ -101,16 +110,16 @@ test.describe('Setup Flow Accessibility', () => {
 
 test.describe('Keyboard Navigation Patterns', () => {
   test('Shift+Tab navigates backwards through elements', async ({ page }) => {
-    await page.goto('/');
+    await goToApiKeyEntry(page);
 
     // Start at the auto-focused input
     const input = page.getByPlaceholder('sk-ant-api03-...');
     await expect(input).toBeFocused();
 
-    // Tab forward to button
+    // Tab forward to external link
     await page.keyboard.press('Tab');
-    const validateBtn = page.getByRole('button', { name: /validate api key/i });
-    await expect(validateBtn).toBeFocused();
+    const link = page.locator('a[href*="console.anthropic.com"]');
+    await expect(link).toBeFocused();
 
     // Shift+Tab back to input
     await page.keyboard.press('Shift+Tab');
@@ -118,19 +127,17 @@ test.describe('Keyboard Navigation Patterns', () => {
   });
 
   test('disabled button cannot be activated with Enter or Space', async ({ page }) => {
-    await page.goto('/');
+    await goToApiKeyEntry(page);
 
-    // Tab to disabled validate button (no input yet)
-    await page.keyboard.press('Tab');
     const validateBtn = page.getByRole('button', { name: /validate api key/i });
     await expect(validateBtn).toBeDisabled();
 
-    // Press Enter on disabled button — no error should appear
+    // Press Enter with empty input — no error should appear
     await page.keyboard.press('Enter');
     const errorMsg = page.locator('p.text-danger');
     await expect(errorMsg).toHaveCount(0);
 
-    // Press Space on disabled button — still no error
+    // Press Space — still no error
     await page.keyboard.press(' ');
     await expect(errorMsg).toHaveCount(0);
   });
@@ -138,7 +145,7 @@ test.describe('Keyboard Navigation Patterns', () => {
 
 test.describe('Color and Visual Accessibility', () => {
   test('error state uses distinct color and text (not color alone)', async ({ page }) => {
-    await page.goto('/');
+    await goToApiKeyEntry(page);
     const input = page.getByPlaceholder('sk-ant-api03-...');
     await input.fill('invalid-key');
 
@@ -154,14 +161,14 @@ test.describe('Color and Visual Accessibility', () => {
   });
 
   test('success state uses distinct color and text', async ({ page }) => {
-    await page.goto('/');
+    await goToApiKeyEntry(page);
     const input = page.getByPlaceholder('sk-ant-api03-...');
     await input.fill('sk-ant-api03-test-key');
 
     const btn = page.getByRole('button', { name: /validate api key/i });
     await btn.click();
 
-    const successMsg = page.locator('p.text-semantic-success');
+    const successMsg = page.locator('p.text-semantic-success').first();
     await expect(successMsg).toBeVisible({ timeout: 5000 });
     const text = await successMsg.textContent();
     expect(text).toBeTruthy();
@@ -169,7 +176,7 @@ test.describe('Color and Visual Accessibility', () => {
   });
 
   test('input border changes on error (visual distinction)', async ({ page }) => {
-    await page.goto('/');
+    await goToApiKeyEntry(page);
     const input = page.getByPlaceholder('sk-ant-api03-...');
     await input.fill('invalid-key');
 
@@ -187,7 +194,7 @@ test.describe('Color and Visual Accessibility', () => {
 
 test.describe('Screen Reader Semantics', () => {
   test('page uses semantic HTML structure', async ({ page }) => {
-    await page.goto('/');
+    await goToApiKeyEntry(page);
 
     // h1 exists for main heading
     const h1 = page.getByRole('heading', { level: 1 });
@@ -200,7 +207,7 @@ test.describe('Screen Reader Semantics', () => {
   });
 
   test('link elements are proper anchor tags', async ({ page }) => {
-    await page.goto('/');
+    await goToApiKeyEntry(page);
     const links = page.getByRole('link');
     const count = await links.count();
     expect(count).toBeGreaterThan(0);

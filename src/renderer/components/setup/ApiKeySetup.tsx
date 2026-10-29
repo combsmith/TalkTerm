@@ -175,7 +175,7 @@ export function ApiKeySetup({
               setEnvKeyDeclined(true);
               setError(null);
             }}
-            className="text-center text-small text-text-muted-on-dark hover:text-text-on-dark"
+            className="min-h-8 min-w-8 px-2 py-1 text-center text-small text-text-muted-on-dark hover:text-text-on-dark"
           >
             Enter a different key instead
           </button>
@@ -248,7 +248,7 @@ export function ApiKeySetup({
               setIsValid(false);
               setIsValidating(false);
             }}
-            className="text-small text-text-muted-on-dark hover:text-text-on-dark"
+            className="min-h-8 min-w-8 px-2 py-1 text-small text-text-muted-on-dark hover:text-text-on-dark"
           >
             Back
           </button>

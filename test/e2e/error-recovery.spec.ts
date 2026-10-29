@@ -48,9 +48,14 @@ test.describe('Error Recovery Flows', () => {
     page = await app.firstWindow();
     await page.waitForLoadState('domcontentloaded');
 
-    // Should route to the API key entry screen with "Get Started" heading
+    // Should route to the auth choice screen with "Get Started" heading, then API key entry
     const heading = page.locator('h1');
     await expect(heading).toContainText('Get Started', { timeout: 15000 });
+
+    const apiKeyOption = page.getByRole('button', { name: /anthropic api key/i });
+    if (await apiKeyOption.isVisible().catch(() => false)) {
+      await apiKeyOption.click();
+    }
 
     // The password input for the API key should be visible and focusable
     const input = page.locator('input[type="password"]');
