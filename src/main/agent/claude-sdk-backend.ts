@@ -539,6 +539,8 @@ export class ClaudeSdkBackend implements AgentBackend {
     const env = { ...process.env };
     if (apiKey !== null) {
       env.ANTHROPIC_API_KEY = apiKey;
+    } else {
+      delete env.ANTHROPIC_API_KEY;
     }
     return env;
   }
@@ -991,7 +993,13 @@ export class ClaudeSdkBackend implements AgentBackend {
     if (sysMsg.subtype === 'task_notification') {
       const taskStatus = sysMsg.status ?? 'completed';
       if (taskStatus === 'completed') {
-        return [{ type: 'complete', summary: sysMsg.summary ?? 'Task completed' }];
+        return [
+          {
+            type: 'progress',
+            step: sysMsg.summary ?? 'Task completed',
+            status: 'completed',
+          },
+        ];
       }
       return [
         {

@@ -1045,7 +1045,7 @@ describe('ClaudeSdkBackend', () => {
       expect(progressEvent).toBeDefined();
     });
 
-    it('maps task_notification completed to complete event with summary', async () => {
+    it('maps task_notification completed to completed progress event with summary instead of turn completion', async () => {
       const sdkMock = mockSdkModule([
         {
           type: 'system',
@@ -1062,11 +1062,11 @@ describe('ClaudeSdkBackend', () => {
       const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
       const events = await collectEvents(backend.sendMessage('sess-42', 'hello'));
 
-      const completeEvent = events.find((e) => e.type === 'complete');
-      expect(completeEvent).toBeDefined();
-      if (completeEvent?.type === 'complete') {
-        expect(completeEvent.summary).toBe('All tests passed');
-      }
+      const progressEvent = events.find(
+        (e) => e.type === 'progress' && e.status === 'completed' && e.step === 'All tests passed',
+      );
+      expect(progressEvent).toBeDefined();
+      expect(events.some((e) => e.type === 'complete')).toBe(false);
     });
 
     it('maps task_notification failed to error event', async () => {
@@ -1212,10 +1212,66 @@ describe('ClaudeSdkBackend', () => {
         events.some((e) => e.type === 'progress' && e.step === 'Waiting for API availability...'),
       ).toBe(true);
       expect(events.some((e) => e.type === 'progress' && e.step === 'Processing...')).toBe(true);
-      expect(events.some((e) => e.type === 'complete' && e.summary === 'Task completed')).toBe(
-        true,
-      );
+      expect(
+        events.some(
+          (e) => e.type === 'progress' && e.step === 'Task completed' && e.status === 'completed',
+        ),
+      ).toBe(true);
       expect(events.some((e) => e.type === 'error')).toBe(true);
+    });
+
+    it('removes inherited ANTHROPIC_API_KEY from SDK env when claude-subscription auth mode is selected', async () => {
+      const previousKey = process.env['ANTHROPIC_API_KEY'];
+      process.env['ANTHROPIC_API_KEY'] = 'sk-ant-inherited-env-key';
+      try {
+        const sdkMock = mockSdkModule([
+          {
+            type: 'result',
+            subtype: 'success',
+            result: 'Done',
+            total_cost_usd: 0,
+            num_turns: 1,
+            session_id: 'sess-sub',
+          },
+        ]);
+        installSdkMock(sdkMock);
+
+        const backend = new ClaudeSdkBackend(
+          createMockAuditRepo(),
+          () => 'sk-ant-stored-key',
+          () => 'claude-subscription',
+        );
+        await collectEvents(
+          backend.startSession({ workspacePath: '/tmp/project', apiKey: 'sk-ant-config-key' }),
+        );
+        await collectEvents(backend.sendMessage('sess-sub', 'hello'));
+
+        expect(sdkMock.query).toHaveBeenCalledTimes(2);
+        const startCall = sdkMock.query.mock.calls[0] as [
+          {
+            prompt: string;
+            options: { env: Record<string, string | undefined>; forceLoginMethod?: string };
+          },
+        ];
+        const turnCall = sdkMock.query.mock.calls[1] as [
+          {
+            prompt: string;
+            options: { env: Record<string, string | undefined>; forceLoginMethod?: string };
+          },
+        ];
+        expect(startCall[0].options.forceLoginMethod).toBe('claudeai');
+        expect(startCall[0].options.env['ANTHROPIC_API_KEY']).toBeUndefined();
+        expect('ANTHROPIC_API_KEY' in startCall[0].options.env).toBe(false);
+        expect(turnCall[0].options.forceLoginMethod).toBe('claudeai');
+        expect(turnCall[0].options.env['ANTHROPIC_API_KEY']).toBeUndefined();
+        expect('ANTHROPIC_API_KEY' in turnCall[0].options.env).toBe(false);
+      } finally {
+        if (previousKey === undefined) {
+          delete process.env['ANTHROPIC_API_KEY'];
+        } else {
+          process.env['ANTHROPIC_API_KEY'] = previousKey;
+        }
+      }
     });
   });
 

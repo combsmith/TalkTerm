@@ -10,6 +10,15 @@ describe('stripMarkdown', () => {
       'Check src/my_file_name.ts and italic text or bold text.',
     );
   });
+
+  it('preserves link destinations in plain-text conversion without duplicating identical label URLs', () => {
+    expect(
+      stripMarkdown('Download from [the official release](https://example.com/installer.zip).'),
+    ).toBe('Download from the official release (https://example.com/installer.zip).');
+    expect(stripMarkdown('Visit [https://example.com](https://example.com).')).toBe(
+      'Visit https://example.com.',
+    );
+  });
 });
 
 describe('parseQuestions', () => {

@@ -17,7 +17,9 @@ export function stripMarkdown(text: string): string {
         .replace(/^#{1,6}[ \t]+/gm, '') // headings
         .replace(/^[ \t]*[-*+][ \t]+/gm, '') // list items
         .replace(/^[ \t]*\d+[.)][ \t]+/gm, '') // numbered items
-        .replace(/\[([^\][]+)\]\([^()]+\)/g, '$1'); // links
+        .replace(/\[([^\][]+)\]\(([^()]+)\)/g, (_match, label: string, url: string) =>
+          label.trim() === url.trim() ? label : `${label} (${url})`,
+        ); // links (preserve destination)
     })
     .join('')
     .trim();
