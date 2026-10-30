@@ -1,5 +1,5 @@
 # generated: 2026-03-24
-# last_updated: 2026-03-24
+# last_updated: 2026-03-29
 # project: TalkTerm
 # project_key: NOKEY
 # tracking_system: file-system
@@ -12,30 +12,15 @@
 #   - in-progress: Epic actively being worked on
 #   - done: All stories in epic completed
 #
-# Epic Status Transitions:
-#   - backlog → in-progress: Automatically when first story is created (via create-story)
-#   - in-progress → done: Manually when all stories reach 'done' status
-#
 # Story Status:
 #   - backlog: Story only exists in epic file
 #   - ready-for-dev: Story file created in stories folder
 #   - in-progress: Developer actively working on implementation
-#   - review: Ready for code review (via Dev's code-review workflow)
+#   - review: Ready for code review
 #   - done: Story completed
-#
-# Retrospective Status:
-#   - optional: Can be completed but not required
-#   - done: Retrospective has been completed
-#
-# WORKFLOW NOTES:
-# ===============
-# - Epic transitions to 'in-progress' automatically when first story is created
-# - Stories can be worked in parallel if team capacity allows
-# - SM typically creates next story after previous one is 'done' to incorporate learnings
-# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-24
-last_updated: 2026-03-24
+last_updated: 2026-03-29
 project: TalkTerm
 project_key: NOKEY
 tracking_system: file-system
@@ -43,94 +28,103 @@ story_location: _bmad-output/implementation-artifacts
 
 development_status:
   # Epic 1: Project Foundation & First Launch Gate
-  epic-1: in-progress
-  1-1-initialize-electron-forge-project-with-react-and-rive: ready-for-dev
-  1-2-implement-admin-privilege-check-with-blocking-error-screen: ready-for-dev
+  epic-1: done
+  1-1-initialize-electron-forge-project-with-react-and-rive: done
+  1-2-implement-admin-privilege-check-with-blocking-error-screen: done
   epic-1-retrospective: optional
 
   # Epic 2: API Key Setup & User Onboarding
-  epic-2: in-progress
-  2-1-implement-api-key-entry-with-live-validation: ready-for-dev
-  2-2-implement-user-profile-setup: ready-for-dev
-  2-3-implement-avatar-selection-screen: ready-for-dev
-  2-4-implement-workspace-selection-screen: ready-for-dev
-  2-5-implement-combined-launch-state-assessment: ready-for-dev
-  2-6-implement-design-token-system-with-tailwind-theme: ready-for-dev
+  epic-2: done
+  2-1-implement-api-key-entry-with-live-validation: done
+  2-2-implement-user-profile-setup: done
+  2-3-implement-avatar-selection-screen: done
+  2-4-implement-workspace-selection-screen: done
+  2-5-implement-combined-launch-state-assessment: done
+  2-6-implement-design-token-system-with-tailwind-theme: done
   epic-2-retrospective: optional
 
   # Epic 3: Avatar Presence & Voice Interaction
-  epic-3: in-progress
-  3-1-implement-avatar-canvas-with-rive-state-machine: ready-for-dev
-  3-2-implement-caption-bar-and-status-indicator: ready-for-dev
-  3-3-implement-voice-input-with-speech-to-text: ready-for-dev
-  3-4-implement-text-input-as-co-equal-alternative: ready-for-dev
-  3-5-implement-text-to-speech-with-avatar-voice-output: ready-for-dev
-  3-6-implement-barge-in-support: ready-for-dev
+  epic-3: done
+  3-1-implement-avatar-canvas-with-rive-state-machine: done
+  3-2-implement-caption-bar-and-status-indicator: done
+  3-3-implement-voice-input-with-speech-to-text: done
+  3-4-implement-text-input-as-co-equal-alternative: done
+  3-5-implement-text-to-speech-with-avatar-voice-output: done
+  3-6-implement-barge-in-support: done
   epic-3-retrospective: optional
 
   # Epic 4: Agent Backbone & Conversation
-  epic-4: in-progress
-  4-1-implement-agent-backend-abstraction-layer: ready-for-dev
-  4-2-integrate-claude-agent-sdk-in-main-process: ready-for-dev
-  4-3-implement-ipc-message-bridge: ready-for-dev
-  4-4-enable-agent-file-operations-and-mcp-tool-invocation: ready-for-dev
+  epic-4: done
+  4-1-implement-agent-backend-abstraction-layer: done
+  4-2-integrate-claude-agent-sdk-in-main-process: done
+  4-3-implement-ipc-message-bridge: done
+  4-4-enable-agent-file-operations-and-mcp-tool-invocation: done
   epic-4-retrospective: optional
 
   # Epic 5: Decision Presentation & Workflow Interaction
-  epic-5: in-progress
-  5-1-implement-three-zone-layout-shell: ready-for-dev
-  5-2-implement-action-cards-and-action-panel: ready-for-dev
-  5-3-implement-confirm-plan-pattern-for-destructive-actions: ready-for-dev
-  5-4-implement-plan-preview-display-mode: ready-for-dev
+  epic-5: done
+  5-1-implement-three-zone-layout-shell: done
+  5-2-implement-action-cards-and-action-panel: done
+  5-3-implement-confirm-plan-pattern-for-destructive-actions: done
+  5-4-implement-plan-preview-display-mode: done
   epic-5-retrospective: optional
 
   # Epic 6: Workflow Execution & Rich Output
-  epic-6: in-progress
-  6-1-implement-multi-step-workflow-execution: ready-for-dev
-  6-2-implement-task-progress-display-mode: ready-for-dev
-  6-3-implement-document-display-mode: ready-for-dev
-  6-4-implement-comparison-table-display-mode: ready-for-dev
-  6-5-implement-clustered-cards-display-mode: ready-for-dev
-  6-6-implement-activity-feed-display-mode: ready-for-dev
-  6-7-implement-display-mode-auto-selection: ready-for-dev
-  6-8-implement-file-upload-via-dialog-and-drag-and-drop: ready-for-dev
+  epic-6: done
+  6-1-implement-multi-step-workflow-execution: done
+  6-2-implement-task-progress-display-mode: done
+  6-3-implement-document-display-mode: done
+  6-4-implement-comparison-table-display-mode: done
+  6-5-implement-clustered-cards-display-mode: done
+  6-6-implement-activity-feed-display-mode: done
+  6-7-implement-display-mode-auto-selection: done
+  6-8-implement-file-upload-via-dialog-and-drag-and-drop: done
   epic-6-retrospective: optional
 
   # Epic 7: Error Handling & Network Recovery
-  epic-7: in-progress
-  7-1-implement-error-classification-and-avatar-error-pipeline: ready-for-dev
-  7-2-implement-network-loss-detection-and-auto-recovery: ready-for-dev
+  epic-7: done
+  7-1-implement-error-classification-and-avatar-error-pipeline: done
+  7-2-implement-network-loss-detection-and-auto-recovery: done
   epic-7-retrospective: optional
 
   # Epic 8: Session Management & Cross-Session Memory
-  epic-8: in-progress
-  8-1-implement-session-persistence-with-sqlite: ready-for-dev
-  8-2-implement-session-start-and-resume-flow: ready-for-dev
-  8-3-implement-cross-session-memory: ready-for-dev
-  8-4-implement-accessibility-foundations: ready-for-dev
+  epic-8: done
+  8-1-implement-session-persistence-with-sqlite: done
+  8-2-implement-session-start-and-resume-flow: done
+  8-3-implement-cross-session-memory: done
+  8-4-implement-accessibility-foundations: done
   epic-8-retrospective: optional
 
   # Epic 9: Traceability & Audit Logging
-  epic-9: in-progress
-  9-1-implement-audit-trail-logging: ready-for-dev
-  9-2-implement-session-action-history-viewer: ready-for-dev
+  epic-9: done
+  9-1-implement-audit-trail-logging: done
+  9-2-implement-session-action-history-viewer: done
   epic-9-retrospective: optional
 
   # Epic 10: Preference Memory & Personalized Experience
-  epic-10: in-progress
-  10-1-integrate-context-scribe-for-preference-tracking: ready-for-dev
-  10-2-surface-learned-preferences-in-ui: ready-for-dev
+  epic-10: done
+  10-1-integrate-context-scribe-for-preference-tracking: done
+  10-2-surface-learned-preferences-in-ui: done
   epic-10-retrospective: optional
 
   # Epic 11: External System Writeback & Contextual Save
-  epic-11: in-progress
-  11-1-implement-send-to-writeback-option: ready-for-dev
-  11-2-implement-contextual-writeback-defaults: ready-for-dev
-  11-3-implement-pull-request-flow: ready-for-dev
+  epic-11: done
+  11-1-implement-send-to-writeback-option: done
+  11-2-implement-contextual-writeback-defaults: done
+  11-3-implement-pull-request-flow: done
   epic-11-retrospective: optional
 
   # Epic 12: Packaging, Distribution & Auto-Update
-  epic-12: in-progress
-  12-1-configure-ci-cd-pipeline-with-github-actions: ready-for-dev
-  12-2-implement-auto-update-mechanism: ready-for-dev
+  epic-12: done
+  12-1-configure-ci-cd-pipeline-with-github-actions: done
+  12-2-implement-auto-update-mechanism: done
   epic-12-retrospective: optional
+
+  # Epic 13: Structured Question Input
+  epic-13: backlog
+  13-1-implement-question-parser-and-detection: backlog
+  13-2-implement-question-card-stack-component: backlog
+  13-3-implement-review-overlay-and-aggregated-submission: backlog
+  13-4-implement-voice-guided-question-flow: backlog
+  13-5-integrate-question-card-stack-into-conversation-view: backlog
+  epic-13-retrospective: optional

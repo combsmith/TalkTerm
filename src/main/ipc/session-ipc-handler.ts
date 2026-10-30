@@ -1,0 +1,116 @@
+import os from 'node:os';
+import { IPC_CHANNELS } from '../../shared/types/domain/ipc-channels';
+import { createSession } from '../../shared/types/domain/session';
+import type { SessionRepository } from '../../shared/types/ports/session-repository';
+import type { KeyManager } from '../security/safe-storage-key-manager';
+import type { ConfigStore } from '../storage/electron-config-store';
+import { enqueueRouterOperation, type IPCMain, type IPCRegistrar } from './ipc-registrar';
+import { validateString } from './validate-string';
+
+export interface SessionStarter {
+  startSession(config: {
+    sessionId?: string;
+    workspacePath: string;
+    apiKey: string;
+  }): Promise<void>;
+  resumeSession?(sessionId: string): Promise<void>;
+}
+
+export class SessionIPCHandler implements IPCRegistrar {
+  constructor(
+    private readonly sessionRepo: SessionRepository,
+    private readonly configStore: ConfigStore,
+    private readonly keyManager?: KeyManager,
+    private readonly agentRouter?: SessionStarter,
+  ) {}
+
+  register(ipcMain: IPCMain): void {
+    ipcMain.handle(IPC_CHANNELS.SESSION_START, (_event: unknown, workspacePath: unknown) => {
+      if (typeof workspacePath !== 'string') {
+        throw new Error('workspacePath must be a non-empty string');
+      }
+      const trimmedPath = workspacePath.trim();
+      const storedWorkspace = this.configStore.get('workspacePath');
+      const validPath =
+        trimmedPath !== ''
+          ? trimmedPath
+          : typeof storedWorkspace === 'string' && storedWorkspace.trim() !== ''
+            ? storedWorkspace.trim()
+            : os.tmpdir();
+      if (
+        !this.configStore.has('workspacePath') ||
+        typeof storedWorkspace !== 'string' ||
+        storedWorkspace.trim() === ''
+      ) {
+        this.configStore.set('workspacePath', validPath);
+      }
+      const profile = this.configStore.get('userProfile') as
+        | { avatarPersonaId: string | null }
+        | undefined;
+      const avatarId =
+        profile !== undefined &&
+        profile.avatarPersonaId !== null &&
+        profile.avatarPersonaId.length > 0
+          ? profile.avatarPersonaId
+          : 'mary';
+      const session = createSession(validPath, avatarId);
+      this.sessionRepo.save(session);
+      if (this.agentRouter !== undefined) {
+        const router = this.agentRouter;
+        const storedKey = this.keyManager?.retrieveKey() ?? null;
+        const envKey = process.env['ANTHROPIC_API_KEY'];
+        const apiKey =
+          storedKey !== null && storedKey !== ''
+            ? storedKey
+            : envKey !== undefined && envKey !== ''
+              ? envKey
+              : '';
+        void enqueueRouterOperation(router, () =>
+          router.startSession({
+            sessionId: session.id,
+            workspacePath: validPath,
+            apiKey,
+          }),
+        );
+      }
+      return session.id;
+    });
+
+    ipcMain.handle(IPC_CHANNELS.SESSION_RESUME, (_event: unknown, sessionId: unknown) => {
+      const validSessionId = validateString(sessionId, 'sessionId');
+      const session = this.sessionRepo.findById(validSessionId);
+      if (session === null) {
+        throw new Error(`Session not found: ${validSessionId}`);
+      }
+      this.sessionRepo.updateStatus(session.id, 'active');
+      if (this.agentRouter?.resumeSession !== undefined) {
+        const router = this.agentRouter;
+        void enqueueRouterOperation(router, () => router.resumeSession?.(session.id));
+      }
+      return session;
+    });
+
+    ipcMain.handle(IPC_CHANNELS.LAUNCH_ASSESS_STATE, () => {
+      const profile = this.configStore.get('userProfile') as
+        | { name: string; avatarPersonaId: string | null }
+        | undefined;
+      // Check for API key: stored key, claude-subscription auth mode, OR ANTHROPIC_API_KEY env var
+      const apiKeyEnv = process.env['ANTHROPIC_API_KEY'];
+      const hasEnvKey = apiKeyEnv !== undefined && apiKeyEnv !== '';
+      const hasStoredKey = this.keyManager?.hasKey() === true;
+      const isSubscription = this.configStore.get('authMode') === 'claude-subscription';
+      const workspacePath = this.configStore.get('workspacePath');
+      return {
+        apiKeyValid: hasEnvKey || hasStoredKey || isSubscription,
+        envKeyDetected: hasEnvKey,
+        profileComplete: profile !== undefined && profile.name !== '',
+        avatarSelected:
+          profile !== undefined &&
+          profile.avatarPersonaId !== null &&
+          profile.avatarPersonaId !== '',
+        workspaceSelected: this.configStore.has('workspacePath'),
+        ...(typeof workspacePath === 'string' && workspacePath !== '' ? { workspacePath } : {}),
+      };
+    });
+  }
+}

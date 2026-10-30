@@ -22,6 +22,10 @@ revisionHistory:
     revision: 'v2.1 — Added FR39 (admin privilege check on every launch), FR40 (guided API key setup with live validation), FR41 (API key state management), FR42 (combined launch state assessment), FR43 (live task progress display), FR44 (plan preview with confirm-plan integration), FR45 (multi-mode rich content rendering). Updated MVP scope to macOS + Windows. Added admin privilege requirement to platform requirements.'
   - date: '2026-03-23'
     revision: 'v2.2 — Strengthened FR8 (text input co-equal with voice). Added FR48-50 (external system writeback via MCP). Added FR51 (preference memory via context-scribe). Added FR52-53 (workspace selection). Added FR54 (contextual writeback: ADO→ADO, repo→PR, local→file based on session origin), FR55 (PR flow), FR56 (ADO writeback flow). Updated FR42 to include workspace in launch state assessment. Driven by UX review feedback.'
+  - date: '2026-03-29'
+    revision: 'v2.3 — Added FR57-FR59 (Structured Question Input): agent multi-question responses detected and presented as Question Card Stack with per-question input cards, suggestion chips, non-linear navigation, review overlay, and aggregated submission. Voice mode supports guided question-by-question flow. Driven by UX design review of agent question patterns.'
+  - date: '2026-03-29'
+    revision: 'v2.4 — Added FR60-FR62 (Native STT): replaced non-functional Web Speech API with sherpa-onnx local streaming speech recognition. Audio captured via getUserMedia in renderer, streamed as 16kHz PCM to main process via IPC, transcribed by sherpa-onnx OnlineRecognizer with Zipformer streaming model (~44 MB auto-download on first use). Driven by confirmed Electron Web Speech API limitation (network error: Google servers unreachable without Chrome API keys).'
 ---
 
 # Product Requirements Document - TalkTerm
@@ -319,13 +323,19 @@ The interaction model follows game-dialog UX — the avatar speaks context, grap
 - FR37: When the user speaks during avatar audio playback, system stops playback and captures the new user input (barge-in support)
 - FR38: When network connectivity is lost mid-session, system pauses the active workflow, displays a connectivity error via text overlay, and resumes the session automatically when connectivity is restored without requiring the user to restart
 
+### Native Speech-to-Text
+
+- FR60: The system must provide speech-to-text using a local, offline-capable speech recognition engine (sherpa-onnx with Zipformer streaming model) that runs in the Electron main process. The Web Speech API must not be used as it is non-functional in Electron. Audio is captured in the renderer via getUserMedia, streamed as 16kHz mono PCM Float32 to the main process via IPC, and transcribed in real-time with streaming partial results and endpoint detection.
+- FR61: On first launch or when speech model files are not present, the system must automatically download the sherpa-onnx streaming model files (~44 MB total) from HuggingFace to the application's userData directory. Download progress must be indicated to the user. The model must persist across app restarts.
+- FR62: Speech recognition must provide streaming interim results (partial transcriptions displayed in real-time as the user speaks) and emit a final result when an utterance endpoint is detected (silence after speech). The avatar must display the 'listening' animation state during active speech capture.
+
 ### System Prerequisites
 
 - FR39: On every launch, TalkTerm must verify that the application is running with administrator/elevated privileges (macOS: root or admin group; Windows: Run as Administrator). If the app is not running as admin, it must display a blocking error screen with platform-specific instructions to relaunch as admin. The app must not proceed past this check until admin privileges are confirmed.
 
 ### API Key Management
 
-- FR40: System must provide a guided API key entry experience that: (a) accepts an Anthropic API key via a single text input field, (b) validates the key against the Anthropic API before accepting it, (c) stores the validated key securely in the OS credential store via safeStorage, (d) displays inline validation feedback (success or specific error reason), and (e) provides a help link explaining how to obtain an API key
+- FR40: System must provide a guided API key entry experience that: (a) accepts an Anthropic API key via a single text input field, (b) presents a "Validate API Key" button that is visible but disabled until the user enters input, and triggers validation on click, (c) validates the key against the Anthropic API before accepting it, (d) stores the validated key securely in the OS credential store via safeStorage, (e) displays inline validation feedback (success or specific error reason) and on success auto-advances to the next setup step after a brief success indicator (~1 s) without requiring an additional click, and (f) provides a help link explaining how to obtain an API key
 - FR41: System must detect and handle three API key states on every launch: (a) no key stored — route to API key entry, (b) key stored and valid — proceed to next setup step, (c) key stored but expired/revoked — route to API key entry with a clear message explaining the key is no longer valid and must be replaced
 
 ### Launch State Assessment
@@ -351,12 +361,19 @@ The interaction model follows game-dialog UX — the avatar speaks context, grap
 - FR43: During multi-step agent workflows, the system must display a live task progress view showing each workflow step with status (pending/in-progress/completed/failed), a visual progress indicator, elapsed time per step, and live counters for workflow-specific metrics (e.g., "18 ideas generated"); progress updates must be driven by the SDK message stream in real time
 - FR44: Before executing a multi-step workflow, the system must present a plan preview showing numbered steps with descriptions, estimated scope, and approach summary; the plan must be presented as part of the confirm-plan pattern (FR20) with options to approve, modify, or choose a different approach; on approval, the plan preview must transition to the task progress view automatically
 - FR45: The output display panel must support multiple display modes that auto-select based on content type: task progress (live workflow tracking), plan preview (proposed approach), document (rendered markdown), comparison table (scored matrix with color coding and expandable rows), clustered cards (categorized ideas with expandable groups), and activity feed (streaming agent action log, hidden by default)
+- FR46: The agent backend must support long-running multi-turn conversations. Each user message must allow the agent up to 25 agentic turns (tool calls + responses) to complete its work. The greeting/session-init query is limited to 1 turn with no tools. These limits serve as safety caps — the agent may complete in fewer turns. If the turn limit is reached, the system must display a specific user-friendly message ("I've reached the maximum number of steps for this request") rather than a generic error.
 
 ### External System Writeback
 
 - FR48: After a workflow produces an output artifact, the system must present a "Send to..." option alongside the local file save option, allowing the user to write the artifact back to a connected external system (e.g., Azure DevOps work item, GitHub issue/PR, Confluence page) via MCP tool integrations
 - FR49: The writeback flow must present the user with: (a) a list of available connected systems detected via MCP, (b) a target location picker appropriate to the selected system (e.g., project/board/work item type for Azure DevOps, repo/path for GitHub), and (c) a preview of the content that will be written before confirmation
 - FR50: Writeback actions must follow the confirm-plan pattern (FR20) — the user must approve the target system, location, and content before execution; the avatar must verbally describe what will be written and where before presenting the confirmation overlay
+
+### Structured Question Input
+
+- FR57: When the agent responds with a message containing two or more numbered questions, the system must detect the question structure (via renderer-side parsing of numbered patterns such as `1.`, `2.`, etc.), extract individual questions with their titles and body text, and present them as a Question Card Stack in the right panel — one card per question — instead of rendering the full response as a single text block. Single-question responses must remain in the standard caption and text input flow with no special treatment.
+- FR58: Each question card must contain: the question title (extracted from bold text or first sentence), full question body including sub-items, an auto-expanding text input for the user's answer, optional suggestion chips parsed from example options listed in the question body, a skip option for questions the user chooses not to answer, and dot navigation indicators showing completion state (answered, skipped, unanswered) for all questions in the set. Users must be able to answer questions in any order via dot navigation or Back/Next controls.
+- FR59: Before submission, the system must present a review overlay showing all answers (and skipped questions) in a compact list with edit affordances for each answer. On user confirmation, the system must aggregate all answers into a single structured message (numbered list format matching the original questions) and send it to the agent via the existing `sendAgentMessage` channel. In voice/live mode, the avatar must read each question aloud, capture the spoken answer via STT, auto-advance to the next question, and present the review overlay after the final question is answered.
 
 ### Repository-Aware Save Behavior
 
@@ -388,6 +405,7 @@ The interaction model follows game-dialog UX — the avatar speaks context, grap
 
 - NFR10: Text input must be a full-featured alternative to voice — no voice-only functionality
 - NFR11: Overlay cards must meet minimum click target sizes of 32×32px and provide clear hover/focus states for keyboard and mouse interaction
+- NFR16: All setup screens must support keyboard-driven interaction: text inputs must auto-focus on mount, and pressing Enter must trigger the screen's primary action (equivalent to clicking the primary button). Screens with a single primary button must allow Enter to activate it when the button is enabled
 - NFR12: Avatar speech must be accompanied by on-screen text captions
 
 ### Integration
