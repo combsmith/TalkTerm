@@ -284,3 +284,14 @@ fdbb5983697cf867bf3a08d1483322f2a9476c28:_bmad/_config/files-manifest.csv:generi
 fdbb5983697cf867bf3a08d1483322f2a9476c28:_bmad/_config/files-manifest.csv:generic-api-key:409
 fdbb5983697cf867bf3a08d1483322f2a9476c28:_bmad/_config/files-manifest.csv:generic-api-key:433
 fdbb5983697cf867bf3a08d1483322f2a9476c28:_bmad/tea/testarch/knowledge/api-testing-patterns.md:generic-api-key:681
+
+# Commit a7a24535: same _bmad/_config/files-manifest.csv CSV rows as above
+# (SHA256 content checksums of BMAD skill files). Same false-positive rationale;
+# file content checksums in CSV, not API keys. Discovered during full-history scan
+# in PR #8 — pattern is identical to all prior entries.
+a7a24535a6a70b141ef3f23de6648869d86c5a25:_bmad/_config/files-manifest.csv:generic-api-key:281
+a7a24535a6a70b141ef3f23de6648869d86c5a25:_bmad/_config/files-manifest.csv:generic-api-key:282
+a7a24535a6a70b141ef3f23de6648869d86c5a25:_bmad/_config/files-manifest.csv:generic-api-key:284
+a7a24535a6a70b141ef3f23de6648869d86c5a25:_bmad/_config/files-manifest.csv:generic-api-key:300
+a7a24535a6a70b141ef3f23de6648869d86c5a25:_bmad/_config/files-manifest.csv:generic-api-key:409
+a7a24535a6a70b141ef3f23de6648869d86c5a25:_bmad/_config/files-manifest.csv:generic-api-key:433

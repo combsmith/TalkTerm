@@ -1,0 +1,11 @@
+node_modules
+.vite
+out
+dist
+*.md
+_bmad
+_bmad-output
+.claude/skills
+.github
+test-results
+.coderabbit.yaml

@@ -136,7 +136,7 @@ Update `tsconfig.json`: add `"jsx": "react-jsx"` to `compilerOptions`.
 - MCP server support built in — no external bridge needed
 - Session persistence via session ID — resume conversations across app restarts
 - Permission control: `allowedTools` for auto-approval, permission callbacks for FR20 confirmation gate
-- Cost/turn limits: `maxTurns` and `maxBudgetUsd` prevent runaway agents
+- Cost/turn limits: `maxTurns` and `maxBudgetUsd` prevent runaway agents. Greeting queries use `maxTurns: 1` with `allowedTools: []` (no tool use). Conversational queries use `maxTurns: 25` to support multi-step agent workflows (FR46).
 - `settingSources: ["project"]` loads CLAUDE.md, skills, hooks from working directory
 - No Claude Code CLI installation required
 
@@ -240,12 +240,28 @@ Update `tsconfig.json`: add `"jsx": "react-jsx"` to `compilerOptions`.
 
 | SDK Message Type | Avatar State | UI Action | Right Panel Display Mode |
 |---|---|---|---|
-| `system` (init) | Ready | Show session info | Hidden |
+| `system` (init) | Ready | Log session capabilities | Hidden |
+| `system` (api_retry) | — | Silent (SDK handles retries internally) | Unchanged |
+| `system` (task_started) | Thinking | Show task description in caption | Task Progress |
+| `system` (task_progress) | Thinking | Feed last_tool_name into TaskProgress steps | Task Progress — live update |
+| `system` (task_notification) | Ready | Complete (if success) or error (if failed) with summary | Task Progress |
+| `system` (session_state_changed) | — | Log only | Unchanged |
+| `assistant` with text blocks | Speaking | Start TTS, animate lip sync | Auto-select: Document / ComparisonTable / ClusteredCards (FR45) |
 | `assistant` with plan proposal | Speaking | Start TTS, present plan | Plan Preview (FR44) |
-| `assistant` with tool calls | Thinking | Show progress indicator, tool activity | Task Progress — live update (FR43) |
-| `assistant` text-only | Speaking | Start TTS, animate lip sync | Unchanged |
-| `result` (success) | Summarizing | Verbal summary → output display | Auto-select: Document / ComparisonTable / ClusteredCards (FR45) |
-| `result` (error) | Error recovery | Avatar explains error, show recovery options (FR34-FR35) | Hidden or shows partial results |
+| `assistant` with tool_use blocks | Thinking | Show progress indicator, tool activity | Task Progress — live update (FR43) |
+| `assistant` with thinking blocks | Deep-thinking | Trigger deep-thinking avatar animation | Unchanged |
+| `assistant` with tool_result blocks | — | Summarize output in caption | Unchanged |
+| `result` (success) | Ready | Flush pending text, clear task progress | Unchanged |
+| `result` (error_during_execution) | Error recovery | Avatar explains error, show recovery options (FR34-FR35) | Hidden |
+| `result` (error_max_turns) | Error recovery | "I've reached the maximum number of steps" — specific message | Hidden |
+| `result` (error_max_budget_usd) | Error recovery | "This request exceeded the cost budget" — specific message | Hidden |
+| `tool_use_summary` | — | Progress event (completed) | Unchanged |
+| `tool_progress` | Thinking | Show tool name in caption | Task Progress |
+| `rate_limit_event` | Thinking | "Waiting for API availability..." (debounced 300ms) | Unchanged |
+| `auth_status` | Thinking | Show auth message as caption (e.g., "Opening browser...") | Hidden |
+| `prompt_suggestion` | — | Display suggestion chips below text input | Hidden |
+| `user` | — | Intentionally dropped (SDK-internal turn confirmations) | — |
+| `stream_event` | — | Not subscribed (partial messages not used) | — |
 
 - User actions (send message, approve/reject action, cancel) flow from renderer → main via `ipcRenderer.invoke("agent:action", payload)`
 - SDK's `query.cancel()` method enables UI-driven cancellation of running agent loops
@@ -292,7 +308,9 @@ MVP implementation: Web Speech API (`SpeechRecognition` for STT, `SpeechSynthesi
 - **Avatar state machine mapping:** Rive state machine inputs controlled by a React hook (`useAvatarState`) that maps SDK message types → Rive input states:
   - `setInputState("isListening", true)` when microphone is active
   - `setInputState("isThinking", true)` when SDK yields tool-call messages
+  - `setInputState("isDeepThinking", true)` when SDK yields extended thinking blocks
   - `setInputState("isSpeaking", true)` when TTS is playing
+- **Avatar animation states:** `ready`, `listening`, `thinking`, `deep-thinking`, `speaking`, `error`
 - **Routing:** Minimal — single-window app with modal overlays, not multi-page. No router library needed.
 
 ### Infrastructure & Deployment
@@ -418,7 +436,7 @@ interface IPCMessage<T = unknown> {
 }
 ```
 
-Agent messages from SDK are forwarded as-is — the SDK's typed message format IS the contract. No re-wrapping or transformation; the renderer interprets SDK message types directly.
+Agent messages from the SDK are mapped to domain `AgentEvent` types at the anti-corruption boundary (`claude-sdk-backend.ts`). The SDK yields 24+ message types; the backend maps these to 10 domain event types: `text`, `tool-call`, `tool-result`, `confirm-request`, `error`, `complete`, `progress`, `suggestion`, `auth-status`, `thinking`. The renderer only sees domain events — never raw SDK types.
 
 **Audit Log Entry Format:**
 

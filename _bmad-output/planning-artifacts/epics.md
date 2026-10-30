@@ -198,6 +198,9 @@ FR53: Epic 2 - Silent BMAD-method repo clone on skip
 FR54: Epic 11 - Contextual writeback based on session origin
 FR55: Epic 11 - Pull request flow for repo context
 FR56: Epic 11 - ADO writeback flow
+FR57: Epic 13 - Structured question detection and card stack presentation
+FR58: Epic 13 - Question card anatomy with inputs, chips, and navigation
+FR59: Epic 13 - Review overlay and aggregated response submission
 
 ## Epic List
 
@@ -265,6 +268,13 @@ Users can push workflow outputs to connected external systems (Azure DevOps, Git
 ### Epic 12: Packaging, Distribution & Auto-Update
 Users can download, install, and auto-update TalkTerm on macOS and Windows through standard distribution channels.
 **Architecture:** CI/CD, Electron Forge makers, code signing, auto-update, GitHub Releases + Homebrew/winget
+
+### Epic 13: Structured Question Input
+Users receive agent multi-question responses as interactive Question Card Stacks instead of a wall of text — enabling focused per-question input with suggestion chips, non-linear navigation, review-before-submit, and voice-guided mode.
+**FRs covered:** FR57, FR58, FR59
+**NFRs addressed:** NFR10, NFR11
+**UX-DRs:** UX-DR1, UX-DR4, UX-DR9
+**Architecture:** Renderer-side question parser in `shared/types/domain/`, `QuestionCardStack` component in `renderer/components/session/`, integration with existing `sendAgentMessage` IPC channel
 
 ---
 
@@ -1303,3 +1313,180 @@ So that I always have the latest features and fixes.
 **Given** distribution channels are configured
 **When** a release is published
 **Then** Homebrew cask (macOS) and winget (Windows) formulas are updated or updatable
+
+---
+
+## Epic 13: Structured Question Input
+
+Users receive agent multi-question responses as interactive Question Card Stacks instead of a wall of text — enabling focused per-question input with suggestion chips, non-linear navigation, review-before-submit, and voice-guided mode. This epic transforms one of the most common AI friction points (multi-question responses) into a guided, delightful interaction aligned with TalkTerm's "companion, not tool" principle.
+
+### Story 13.1: Implement Question Parser and Detection
+
+As a TalkTerm user,
+I want the system to automatically detect when the agent asks multiple numbered questions,
+So that I receive a structured input experience instead of a wall of text.
+
+**Acceptance Criteria:**
+
+**Given** the agent sends a `text` event containing two or more numbered questions (patterns: `1.`, `2.`, etc. with question marks or bold headers)
+**When** the renderer processes the event
+**Then** a `QuestionSet` is parsed containing: preamble text (any content before the first question), and an array of `Question` objects each with extracted title (from bold text or first sentence up to `?` or `—`), body text (full question including sub-items), and optional suggestion options (parsed from dash-lists, slash-separated, or comma-separated items)
+
+**Given** the agent sends a `text` event with only one question or no numbered questions
+**When** the renderer processes the event
+**Then** the parser returns `null` and the standard caption + text input flow is used
+
+**Given** the agent sends a mixed response with preamble text followed by numbered questions
+**When** the parser extracts the `QuestionSet`
+**Then** the preamble is preserved separately for the avatar to speak, and only the questions become cards
+
+**Technical notes:**
+- Parser lives in `src/shared/types/domain/question-parser.ts` (pure function, no dependencies)
+- Returns `QuestionSet | null` — null means no structured questions detected
+- `QuestionSet` type: `{ preamble: string; questions: Question[] }`
+- `Question` type: `{ index: number; title: string; body: string; suggestions: string[] }`
+- Detection threshold: minimum 2 numbered questions required to trigger card stack (FR57)
+
+### Story 13.2: Implement Question Card Stack Component
+
+As a TalkTerm user,
+I want each agent question presented as its own interactive card with a dedicated input field,
+So that I can focus on one question at a time and answer them clearly.
+
+**Acceptance Criteria:**
+
+**Given** a `QuestionSet` with N questions is detected
+**When** the Question Card Stack renders in the right panel
+**Then** the first question card is displayed with: progress indicator (`1 of N`), clickable dot navigation showing all question states, question title (H2 style), full question body, auto-expanding text area for the answer, and Next button
+
+**Given** the question body contains enumerated options (dash-lists, slash-separated, or comma-separated)
+**When** the card renders
+**Then** suggestion chips appear below the question body as selectable pills (FR58)
+**And** selecting a chip toggles it on/off and the selected chips are combined with any typed text as the answer
+
+**Given** the user is on a question card
+**When** they click a dot in the navigation
+**Then** the card stack navigates to that question (non-linear navigation supported)
+
+**Given** the user is on a question card
+**When** they click Skip
+**Then** the question is marked as skipped, the dot shows a dash indicator, and the next unanswered question is shown
+
+**Given** dot navigation is displayed
+**When** the user has answered some questions, skipped some, and left others untouched
+**Then** dots show distinct states: current (Primary #EB8C00), answered (Success #2E7D32 with checkmark), skipped (dash, Text Muted), unanswered (hollow, Border #E0E0E0)
+
+**Given** question cards with 10+ questions
+**When** the dot navigation renders
+**Then** it remains usable with scrollable or wrapped dot layout
+
+**Technical notes:**
+- Component: `src/renderer/components/session/QuestionCardStack.tsx`
+- State: local `useState` for answer array (ephemeral form state, not `useReducer`)
+- Suggestion chips component: `src/renderer/components/session/SuggestionChips.tsx`
+- Cards follow existing design token system (UX-DR7)
+- Input meets NFR10 (text as full alternative) and NFR11 (32x32px minimum targets)
+
+### Story 13.3: Implement Review Overlay and Aggregated Submission
+
+As a TalkTerm user,
+I want to review all my answers before they are sent to the agent,
+So that I can verify and edit responses before the agent acts on them.
+
+**Acceptance Criteria:**
+
+**Given** the user clicks "Submit All" on the last card or when all questions are answered
+**When** the review overlay appears
+**Then** it shows a compact list of all answers with: question number and title, the answer text (truncated with ellipsis if long), a skipped indicator for unanswered questions, and an edit icon (✎) for each answer
+
+**Given** the review overlay is displayed
+**When** the user clicks the edit icon on any answer
+**Then** the card stack navigates back to that specific question card with the existing answer preserved
+
+**Given** the user confirms submission from the review overlay
+**When** they click "Send to [Avatar Name]"
+**Then** all answers are aggregated into a single structured message in numbered list format matching the original question numbers, skipped questions are included as `(no answer provided)`, and the message is sent via `sendAgentMessage` (FR59)
+
+**Given** the aggregated message is sent
+**When** the agent receives it
+**Then** the card stack is dismissed, the avatar enters thinking state, and normal conversation resumes
+
+**Technical notes:**
+- Review component: `src/renderer/components/session/QuestionReview.tsx`
+- Aggregated message format: `1. [Title]: [Answer]\n2. [Title]: [Answer]\n...`
+- Uses existing `sendAgentMessage` IPC channel — no new backend changes needed
+- Avatar name passed as prop for the submit button label
+
+### Story 13.4: Implement Voice-Guided Question Flow
+
+As a TalkTerm user in voice/live mode,
+I want the avatar to read each question aloud and capture my spoken answers,
+So that I can complete the structured input entirely by voice.
+
+**Acceptance Criteria:**
+
+**Given** the user is in live/voice mode when a `QuestionSet` is detected
+**When** the Question Card Stack appears
+**Then** the avatar speaks the first question aloud and enters listening state after speaking
+
+**Given** the avatar has read a question aloud
+**When** the user speaks their answer
+**Then** the STT transcription fills the current card's answer field
+**And** after a brief pause (silence detection), the avatar auto-advances to the next question and reads it aloud
+
+**Given** all questions have been answered via voice
+**When** the avatar finishes the last question
+**Then** the avatar speaks: "I've got all [N]. Here's what I heard — take a look."
+**And** the review overlay appears
+
+**Given** the user is viewing the review overlay in voice mode
+**When** they say "Looks good" or "Send"
+**Then** the aggregated response is submitted
+
+**Given** the user is in voice mode during the card stack
+**When** they say "Next", "Skip", "Back", "Question [N]", or "Change [N]"
+**Then** the card stack navigates accordingly (voice commands recognized per FR59)
+
+**Technical notes:**
+- Voice flow integrates with existing `WebSpeechStt` and `WebSpeechTts` from ConversationView
+- Voice commands parsed via simple keyword matching in the STT result handler
+- Auto-advance uses existing silence detection + a 1.5s delay before reading next question
+- Falls back gracefully if STT is not available (cards still work via keyboard/mouse)
+
+### Story 13.5: Integrate Question Card Stack into ConversationView
+
+As a TalkTerm user,
+I want the Question Card Stack to appear seamlessly within my conversation flow,
+So that structured question input feels like a natural part of talking with my avatar.
+
+**Acceptance Criteria:**
+
+**Given** the agent sends a `text` event that the parser detects as containing structured questions
+**When** ConversationView processes the event
+**Then** the avatar speaks the preamble text (e.g., "Great concept! I have 5 questions to help me understand your vision.")
+**And** the Question Card Stack slides into the right panel (using existing OutputPanel slide animation)
+**And** the caption bar shows the preamble, not the full question text
+
+**Given** the Question Card Stack is visible in the right panel
+**When** the layout state transitions
+**Then** center stage narrows to accommodate the right panel (consistent with existing three-zone behavior)
+**And** the avatar remains visible in center stage
+
+**Given** the user dismisses the card stack without submitting
+**When** they close the right panel
+**Then** a left panel ActionCard appears: "Answer [Avatar]'s questions" to reopen the card stack with answers preserved
+
+**Given** the aggregated response has been sent
+**When** the agent responds with a follow-up containing new structured questions
+**Then** a new Question Card Stack replaces the previous one (previous answers already submitted)
+
+**Given** network connectivity is lost while the card stack is open
+**When** FR38 network recovery triggers
+**Then** all typed answers are preserved locally and the card stack remains intact
+**And** on reconnect, the user can continue answering and submit normally
+
+**Technical notes:**
+- Integration point: `ConversationView.tsx` — add parser call in the `text` event handler
+- Conditional rendering: `QuestionCardStack` shown in right panel when `questionSet` state is non-null
+- Layout state: reuses existing right panel visibility logic from OutputPanel
+- Answer preservation: answers stored in component state, survive panel close/reopen within the same session
