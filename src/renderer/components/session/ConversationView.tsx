@@ -119,6 +119,9 @@ export function ConversationView({
 
   const sttRef = useRef<IpcSpeechStt | null>(null);
   const ttsRef = useRef<WebSpeechTts | null>(null);
+  const avatarStateRef = useRef<AvatarAnimationState>(avatarState);
+  avatarStateRef.current = avatarState;
+  const turnActiveRef = useRef(false);
   const voiceRef = useRef<string | undefined>(undefined);
   const liveModeRef = useRef(false);
   const restartListeningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -231,6 +234,20 @@ export function ConversationView({
     [clearRestartListeningTimer, scheduleLiveModeRestart],
   );
 
+  const finishPlaybackOrStayBusy = useCallback((): void => {
+    if (turnActiveRef.current) {
+      if (liveModeRef.current) {
+        sttRef.current?.stop();
+      }
+      avatarStateRef.current = 'thinking';
+      setAvatarState('thinking');
+      return;
+    }
+    avatarStateRef.current = 'ready';
+    setAvatarState('ready');
+    scheduleLiveModeRestart();
+  }, [scheduleLiveModeRestart]);
+
   // Flush accumulated text — parse as cards or display as plain text
   const flushPendingText = useCallback((): void => {
     const text = pendingTextRef.current;
@@ -258,13 +275,14 @@ export function ConversationView({
         if (liveModeRef.current && firstQuestion !== undefined) {
           speakActiveQuestion(firstQuestion.body);
         } else {
-          setAvatarState('ready');
           setCaption(null);
           setIsCaptionVisible(false);
-          scheduleLiveModeRestart();
+          finishPlaybackOrStayBusy();
         }
       } else {
-        setAvatarState(parsed.preamble !== '' ? 'speaking' : 'ready');
+        setAvatarState(
+          parsed.preamble !== '' ? 'speaking' : turnActiveRef.current ? 'thinking' : 'ready',
+        );
         setCaption(parsed.preamble !== '' ? parsed.preamble : null);
         setIsCaptionVisible(parsed.preamble !== '');
         if (ttsRef.current !== null && parsed.preamble !== '') {
@@ -273,13 +291,12 @@ export function ConversationView({
               speakActiveQuestion(firstQuestion.body);
               return;
             }
-            setAvatarState('ready');
-            scheduleLiveModeRestart();
+            finishPlaybackOrStayBusy();
           };
           ttsRef.current.speak(parsed.preamble, voiceRef.current);
         } else if (liveModeRef.current && firstQuestion !== undefined) {
           speakActiveQuestion(firstQuestion.body);
-        } else {
+        } else if (!turnActiveRef.current) {
           scheduleLiveModeRestart();
         }
       }
@@ -290,10 +307,9 @@ export function ConversationView({
         displayModeRef.current = 'none';
         displayMode.clear();
         setActiveDocument(text);
-        setAvatarState('ready');
         setCaption(null);
         setIsCaptionVisible(false);
-        scheduleLiveModeRestart();
+        finishPlaybackOrStayBusy();
       } else if (contentType === 'comparison-table') {
         pendingTextRef.current = '';
         displayModeRef.current = 'comparison-table';
@@ -301,10 +317,9 @@ export function ConversationView({
           type: 'comparison-table',
           data: normalizeComparisonData(parseMarkdownTable(text)),
         });
-        setAvatarState('ready');
         setCaption("Here's a comparison for you.");
         setIsCaptionVisible(true);
-        scheduleLiveModeRestart();
+        finishPlaybackOrStayBusy();
       } else if (contentType === 'plan') {
         pendingTextRef.current = '';
         displayModeRef.current = 'plan-preview';
@@ -318,10 +333,9 @@ export function ConversationView({
             ...(intro !== '' ? { approach: intro } : {}),
           },
         });
-        setAvatarState('ready');
         setCaption("Here's my proposed plan.");
         setIsCaptionVisible(true);
-        scheduleLiveModeRestart();
+        finishPlaybackOrStayBusy();
       } else if (contentType === 'clustered-cards') {
         pendingTextRef.current = '';
         displayModeRef.current = 'clustered-cards';
@@ -329,26 +343,25 @@ export function ConversationView({
           type: 'clustered-cards',
           data: normalizeClusteredData(parseClusteredContent(text)),
         });
-        setAvatarState('ready');
         setCaption("I've organized this into categories.");
         setIsCaptionVisible(true);
-        scheduleLiveModeRestart();
+        finishPlaybackOrStayBusy();
       } else {
         const content = pendingTextRef.current;
         pendingTextRef.current = '';
+        avatarStateRef.current = 'speaking';
         setAvatarState('speaking');
         setCaption(stripMarkdown(content));
         setIsCaptionVisible(true);
         if (ttsRef.current !== null) {
           ttsRef.current.onEnd = (): void => {
-            setAvatarState('ready');
-            scheduleLiveModeRestart();
+            finishPlaybackOrStayBusy();
           };
           ttsRef.current.speak(content, voiceRef.current);
         }
       }
     }
-  }, [displayMode.setContent, scheduleLiveModeRestart]); // eslint-disable-line react-hooks/exhaustive-deps -- setContent is stable (useCallback)
+  }, [displayMode.setContent, finishPlaybackOrStayBusy, scheduleLiveModeRestart]); // eslint-disable-line react-hooks/exhaustive-deps -- setContent is stable (useCallback)
 
   // Subscribe to agent events from main process
   useEffect(() => {
@@ -378,6 +391,7 @@ export function ConversationView({
           break;
         }
         case 'tool-call': {
+          turnActiveRef.current = true;
           setAvatarState('thinking');
           setCaption(`${friendlyToolName(event.toolName)}...`);
           setIsCaptionVisible(true);
@@ -396,6 +410,7 @@ export function ConversationView({
           break;
         }
         case 'tool-result': {
+          turnActiveRef.current = true;
           setCaption(
             event.success
               ? `${friendlyToolName(event.toolName)} done`
@@ -425,6 +440,7 @@ export function ConversationView({
           break;
         }
         case 'error':
+          turnActiveRef.current = false;
           if (flushTimerRef.current !== null) {
             clearTimeout(flushTimerRef.current);
             flushTimerRef.current = null;
@@ -448,7 +464,10 @@ export function ConversationView({
             ttsRef.current.speak(event.userMessage, voiceRef.current);
           }
           break;
-        case 'complete':
+        case 'complete': {
+          const hadPendingText = pendingTextRef.current !== '';
+          const wasTurnActive = turnActiveRef.current;
+          turnActiveRef.current = false;
           // Flush any buffered text immediately on completion
           if (flushTimerRef.current !== null) {
             clearTimeout(flushTimerRef.current);
@@ -477,11 +496,16 @@ export function ConversationView({
           }
           flushPendingText();
           setAvatarState((prev) => (prev === 'speaking' ? prev : 'ready'));
+          if (!hadPendingText && wasTurnActive && avatarStateRef.current !== 'speaking') {
+            scheduleLiveModeRestart();
+          }
           // Clear task progress tracking for next turn
           taskStepsRef.current = [];
           toolStartTimeRef.current.clear();
           break;
+        }
         case 'progress':
+          turnActiveRef.current = true;
           if (
             (event.status === 'completed' || event.status === 'failed') &&
             taskStepsRef.current.some((s) => s.status === 'in-progress')
@@ -516,18 +540,21 @@ export function ConversationView({
           }, 300);
           break;
         case 'confirm-request':
+          turnActiveRef.current = false;
           setAvatarState('ready');
           setCaption(`${event.description} — confirm?`);
           setIsCaptionVisible(true);
           setPendingConfirm({ action: event.action, description: event.description });
           break;
         case 'thinking':
+          turnActiveRef.current = true;
           setAvatarState('deep-thinking');
           break;
         case 'suggestion':
           setSuggestions((prev) => [...new Set([...prev, ...event.suggestions])]);
           break;
         case 'auth-status':
+          turnActiveRef.current = true;
           setAvatarState('thinking');
           setCaption(event.message);
           setIsCaptionVisible(true);
@@ -620,6 +647,7 @@ export function ConversationView({
   /** FR37 — Stop avatar talking (barge-in). Stops TTS/STT and cancels agent. */
   function handleStopTalking(): void {
     clearRestartListeningTimer();
+    turnActiveRef.current = false;
     ttsRef.current?.stop();
     sttRef.current?.stop();
     pendingTextRef.current = '';
@@ -633,6 +661,7 @@ export function ConversationView({
 
   function handleSendInternal(text: string): void {
     clearRestartListeningTimer();
+    turnActiveRef.current = true;
     sttRef.current?.stop();
     ttsRef.current?.stop();
     pendingTextRef.current = '';
@@ -654,6 +683,7 @@ export function ConversationView({
     displayMode.clear();
 
     window.electronAPI.sendAgentMessage(sessionId, text).catch(() => {
+      turnActiveRef.current = false;
       setAvatarState('ready');
       setCaption('Something went wrong. Please try again.');
       setIsCaptionVisible(true);
@@ -680,6 +710,7 @@ export function ConversationView({
   /** Handle confirmation for destructive actions (ConfirmPlan) — resolves the pending SDK permission */
   function handleConfirmApprove(): void {
     setPendingConfirm(null);
+    turnActiveRef.current = true;
     window.electronAPI.respondToConfirmation(true);
     setAvatarState('thinking');
     setCaption(null);

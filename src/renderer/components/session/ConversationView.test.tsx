@@ -1054,6 +1054,7 @@ describe('ConversationView', () => {
     expect(mockSendAgentMessage).toHaveBeenCalledWith('s1', 'barge in message');
 
     // 7. Cancel delayed mic restart when user disables live mode within 300ms after TTS ends
+    simulateAgentEvent({ type: 'complete', summary: 'Done' });
     mockSttInstance.start.mockClear();
     mockSttInstance.isListening = false;
     act(() => {
@@ -1121,5 +1122,55 @@ describe('ConversationView', () => {
     // Also cover empty-preamble question set in live mode
     simulateTextAndFlush('1. **Auth** — OAuth or SSO?\n2. **DB** — Postgres or SQLite?');
     expect(mockTtsSpeak).toHaveBeenLastCalledWith('Auth — OAuth or SSO?', undefined);
+  });
+
+  it('preserves thinking state and Stop button after TTS finishes when a tool call or turn is still active', () => {
+    vi.useFakeTimers();
+    render(<ConversationView userName="DJ" avatarName="Mary" sessionId="s1" />);
+
+    // Enter live mode
+    act(() => {
+      screen.getByRole('button', { name: /start recording/i }).click();
+    });
+    mockSttInstance.start.mockClear();
+    mockSttInstance.isListening = false;
+
+    // SDK emits explanatory text followed by a long-running tool call before the 600ms text flush
+    simulateAgentEvent({ type: 'text', content: 'Let me run the test suite now.' });
+    simulateAgentEvent({
+      type: 'tool-call',
+      toolName: 'Bash',
+      toolInput: { command: 'npm test' },
+    });
+
+    // 600ms debounce flushes explanatory text to TTS while tool call is still in progress
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(screen.getByLabelText(/avatar is speaking/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /stop talking/i })).toBeInTheDocument();
+
+    // TTS finishes while tool is still running (no complete event yet)
+    mockSttInstance.start.mockClear();
+    act(() => {
+      mockTtsInstance.onEnd?.();
+    });
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+
+    // Must remain in thinking state with Stop button visible and NOT restart live-mode input capture
+    expect(screen.getByLabelText(/avatar is thinking/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /stop talking/i })).toBeInTheDocument();
+    expect(mockSttInstance.start).not.toHaveBeenCalled();
+
+    // Once turn completes, avatar transitions to ready and live mode restarts listening
+    simulateAgentEvent({ type: 'complete', summary: 'Done' });
+    expect(screen.getByLabelText(/avatar is ready/i)).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(mockSttInstance.start).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 });

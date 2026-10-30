@@ -234,8 +234,11 @@ export class SherpaOnnxStt {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[SherpaOnnxStt] Error processing audio:', msg);
-      this.onError?.(`Speech processing error: ${msg}`);
-      this.stop();
+      try {
+        this.onError?.(`Speech processing error: ${msg}`);
+      } finally {
+        this.stop();
+      }
     }
   }
 

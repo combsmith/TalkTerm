@@ -93,8 +93,18 @@ describe('SettingsIPCHandler', () => {
     await expect(browse?.({})).resolves.toBe('/tmp/selected-workspace');
 
     const setWorkspace = handlers.get(IPC_CHANNELS.WORKSPACE_SET);
-    setWorkspace?.({}, '/tmp/custom-workspace');
-    expect(store.get('workspacePath')).toBe('/tmp/custom-workspace');
+    setWorkspace?.({}, process.cwd());
+    expect(store.get('workspacePath')).toBe(process.cwd());
+
+    // Rejects nonexistent paths and file paths without overwriting stored workspace
+    expect(() => setWorkspace?.({}, '/nonexistent/talkterm/workspace-dir-99999')).toThrow(
+      'Workspace directory does not exist or is not accessible',
+    );
+    expect(store.get('workspacePath')).toBe(process.cwd());
+    expect(() => setWorkspace?.({}, __filename)).toThrow(
+      'Workspace path must be an existing directory',
+    );
+    expect(store.get('workspacePath')).toBe(process.cwd());
 
     // Empty workspace path (skip) resolves to and persists os.tmpdir()
     const resolvedDefault = setWorkspace?.({}, '');

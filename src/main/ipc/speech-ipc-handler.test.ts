@@ -279,4 +279,37 @@ describe('SpeechIPCHandler', () => {
 
     expect(mockStt.acceptAudio).toHaveBeenCalled();
   });
+
+  it('skips sending IPC events when WebContents is destroyed and stopCapture tears down active or pending capture', async () => {
+    const destroyedSend = vi.fn();
+    handler = new SpeechIPCHandler(
+      mockStt as SherpaOnnxStt,
+      () => ({ send: destroyedSend, isDestroyed: () => true }) as unknown as WebContents,
+    );
+    handler.register(mockIpcMain as IpcMain);
+
+    let resolveInit!: () => void;
+    mockStt.initialize = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveInit = resolve;
+        }),
+    );
+
+    const startHandler = ipcHandlers[IPC_CHANNELS.AUDIO_START];
+    const startPromise = startHandler?.({} as IpcMainInvokeEvent);
+
+    mockStt.onResult?.({ transcript: 'ignored', isFinal: true });
+    mockStt.onError?.('ignored error');
+    mockStt.onEnd?.();
+    expect(destroyedSend).not.toHaveBeenCalled();
+
+    // Window closure calls stopCapture(), invalidating pending initialization and stopping STT
+    handler.stopCapture();
+    expect(mockStt.stop).toHaveBeenCalledTimes(1);
+
+    resolveInit();
+    await startPromise;
+    expect(mockStt.start).not.toHaveBeenCalled();
+  });
 });

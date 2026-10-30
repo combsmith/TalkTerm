@@ -218,14 +218,7 @@ export function App(): ReactElement | null {
         <WorkspaceSelection
           onSelectFolder={(path: string) => {
             setWorkspacePath(path);
-            void window.electronAPI
-              .setWorkspace(path)
-              .then(() => {
-                completeCurrentStep();
-              })
-              .catch(() => {
-                completeCurrentStep();
-              });
+            completeCurrentStep();
           }}
           onSkip={() => {
             void window.electronAPI

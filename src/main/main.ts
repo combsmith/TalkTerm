@@ -41,6 +41,18 @@ declare const MAIN_WINDOW_VITE_NAME: string;
 
 let mainWindow: BrowserWindow | null = null;
 let cachedAdminResult: AdminCheckResult | null = null;
+let onMainWindowClosed: (() => void) | null = null;
+
+function getActiveWebContents(): Electron.WebContents | null {
+  if (mainWindow === null || mainWindow.isDestroyed()) {
+    return null;
+  }
+  const wc = mainWindow.webContents;
+  if (wc.isDestroyed()) {
+    return null;
+  }
+  return wc;
+}
 
 function isTrustedAppUrl(url: string): boolean {
   if (url.startsWith('file://')) {
@@ -54,7 +66,7 @@ function isTrustedAppUrl(url: string): boolean {
 }
 
 function createMainWindow(adminResult: AdminCheckResult): void {
-  mainWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 800,
@@ -68,14 +80,21 @@ function createMainWindow(adminResult: AdminCheckResult): void {
       sandbox: true,
     },
   });
+  mainWindow = win;
+  win.on('closed', () => {
+    if (mainWindow === win) {
+      mainWindow = null;
+    }
+    onMainWindowClosed?.();
+  });
 
   // Restrict navigation and external window opening
-  mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+  win.webContents.on('will-navigate', (event, navigationUrl) => {
     if (!isTrustedAppUrl(navigationUrl)) {
       event.preventDefault();
     }
   });
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+  win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://') || url.startsWith('http://')) {
       void shell.openExternal(url);
     }
@@ -83,40 +102,39 @@ function createMainWindow(adminResult: AdminCheckResult): void {
   });
 
   // Send admin check result to renderer
-  mainWindow.webContents.on('did-finish-load', () => {
-    mainWindow?.webContents.send(IPC_CHANNELS.ADMIN_CHECK_RESULT, adminResult);
+  win.webContents.on('did-finish-load', () => {
+    getActiveWebContents()?.send(IPC_CHANNELS.ADMIN_CHECK_RESULT, adminResult);
   });
 
   // Log renderer errors to stderr for debugging
-  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
     console.error('did-fail-load:', errorCode, errorDescription);
   });
-  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+  win.webContents.on('render-process-gone', (_event, details) => {
     console.error('render-process-gone:', details);
   });
 
   const devServerUrl = MAIN_WINDOW_VITE_DEV_SERVER_URL;
   if (devServerUrl !== undefined && devServerUrl !== '') {
-    void mainWindow.loadURL(devServerUrl);
+    void win.loadURL(devServerUrl);
   } else {
-    void mainWindow.loadFile(
-      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
-    );
+    void win.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
   }
 
   // Force window to foreground
-  mainWindow.show();
-  mainWindow.focus();
+  win.show();
+  win.focus();
   app.focus({ steal: true });
 
   // Ctrl+D / Cmd+D to toggle DevTools (developer/debug view)
   // Use before-input-event instead of globalShortcut for reliable packaged-app support
-  mainWindow.webContents.on('before-input-event', (_event, input) => {
+  win.webContents.on('before-input-event', (_event, input) => {
     if (input.key === 'd' && (input.control || input.meta) && input.type === 'keyDown') {
-      if (mainWindow?.webContents.isDevToolsOpened() === true) {
-        mainWindow.webContents.closeDevTools();
+      const activeWc = getActiveWebContents();
+      if (activeWc?.isDevToolsOpened() === true) {
+        activeWc.closeDevTools();
       } else {
-        mainWindow?.webContents.openDevTools({ mode: 'detach' });
+        activeWc?.openDevTools({ mode: 'detach' });
       }
     }
   });
@@ -207,11 +225,7 @@ function bootstrap(): void {
   // 5. IPC handlers — register with ipcMain
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require for ipcMain in composition root
   const { ipcMain } = require('electron') as typeof import('electron');
-  const agentHandler = new AgentIPCHandler(
-    agentRouter,
-    () => mainWindow?.webContents ?? null,
-    sessionRepo,
-  );
+  const agentHandler = new AgentIPCHandler(agentRouter, getActiveWebContents, sessionRepo);
   const settingsHandler = new SettingsIPCHandler(
     keyManager,
     configStore,
@@ -240,7 +254,10 @@ function bootstrap(): void {
   );
   const sessionHandler = new SessionIPCHandler(sessionRepo, configStore, keyManager, agentRouter);
   const sherpaOnnxStt = new SherpaOnnxStt();
-  const speechHandler = new SpeechIPCHandler(sherpaOnnxStt, () => mainWindow?.webContents ?? null);
+  const speechHandler = new SpeechIPCHandler(sherpaOnnxStt, getActiveWebContents);
+  onMainWindowClosed = (): void => {
+    speechHandler.stopCapture();
+  };
   agentHandler.register(ipcMain);
   settingsHandler.register(ipcMain);
   sessionHandler.register(ipcMain);

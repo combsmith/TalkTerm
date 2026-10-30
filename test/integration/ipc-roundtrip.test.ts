@@ -197,7 +197,7 @@ describe('IPC roundtrip integration', () => {
       await invoke(IPC_CHANNELS.SETTINGS_STORE_KEY, 'sk-ant-api123');
 
       // Step 4: Set workspace
-      await invoke(IPC_CHANNELS.WORKSPACE_SET, '/projects/demo');
+      await invoke(IPC_CHANNELS.WORKSPACE_SET, process.cwd());
 
       // Step 5: Assess launch state -- everything should be ready
       const state = (await invoke(IPC_CHANNELS.LAUNCH_ASSESS_STATE)) as Record<string, unknown>;
@@ -207,7 +207,7 @@ describe('IPC roundtrip integration', () => {
       expect(state.workspaceSelected).toBe(true);
 
       // Step 6: Start session
-      const sessionId = await invoke(IPC_CHANNELS.SESSION_START, '/projects/demo');
+      const sessionId = await invoke(IPC_CHANNELS.SESSION_START, process.cwd());
       expect(typeof sessionId).toBe('string');
       expect(sessionRepo.save).toHaveBeenCalledOnce();
     });

@@ -3,6 +3,7 @@ import type { TextToSpeech } from '../../shared/types/ports/text-to-speech';
 
 export class WebSpeechTts implements TextToSpeech {
   private _isSpeaking = false;
+  private activeUtterance: SpeechSynthesisUtterance | null = null;
 
   onEnd: (() => void) | null = null;
 
@@ -24,16 +25,25 @@ export class WebSpeechTts implements TextToSpeech {
       }
     }
 
-    utterance.onend = (): void => {
+    const finalize = (): void => {
+      if (this.activeUtterance !== utterance) {
+        return;
+      }
+      this.activeUtterance = null;
       this._isSpeaking = false;
       this.onEnd?.();
     };
 
+    utterance.onend = finalize;
+    utterance.onerror = finalize;
+
+    this.activeUtterance = utterance;
     this._isSpeaking = true;
     window.speechSynthesis.speak(utterance);
   }
 
   stop(): void {
+    this.activeUtterance = null;
     if (typeof window !== 'undefined' && window.speechSynthesis !== undefined) {
       window.speechSynthesis.cancel();
     }

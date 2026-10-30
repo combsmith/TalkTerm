@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import os from 'node:os';
 import { MVP_PERSONAS } from '../../shared/types/domain/avatar-persona';
 import { IPC_CHANNELS } from '../../shared/types/domain/ipc-channels';
@@ -122,6 +123,15 @@ export class SettingsIPCHandler implements IPCRegistrar {
       }
       const trimmedPath = workspacePath.trim();
       const validPath = trimmedPath !== '' ? trimmedPath : os.tmpdir();
+      let stat: fs.Stats;
+      try {
+        stat = fs.statSync(validPath);
+      } catch {
+        throw new Error('Workspace directory does not exist or is not accessible');
+      }
+      if (!stat.isDirectory()) {
+        throw new Error('Workspace path must be an existing directory');
+      }
       this.configStore.set('workspacePath', validPath);
       return validPath;
     });

@@ -134,4 +134,39 @@ describe('WorkspaceSelection', () => {
     expect(screen.queryByTestId('selected-folder')).not.toBeInTheDocument();
     expect(onSelectFolder).not.toHaveBeenCalled();
   });
+
+  it('keeps setup open with an actionable error when setWorkspace rejects an invalid directory', async () => {
+    const onSelectFolder = vi.fn();
+    const setWorkspace = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new Error(
+          "Error invoking remote method 'workspace:set': Error: Workspace directory does not exist or is not accessible",
+        ),
+      )
+      .mockResolvedValueOnce('/valid/workspace');
+    Object.defineProperty(window, 'electronAPI', {
+      value: { setWorkspace },
+      writable: true,
+      configurable: true,
+    });
+    const user = userEvent.setup();
+    render(<WorkspaceSelection onSelectFolder={onSelectFolder} onSkip={vi.fn()} />);
+
+    await user.type(screen.getByTestId('folder-input'), '/nonexistent/folder');
+    await user.click(screen.getByRole('button', { name: /select folder/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Workspace directory does not exist or is not accessible',
+    );
+    expect(screen.queryByTestId('selected-folder')).not.toBeInTheDocument();
+    expect(onSelectFolder).not.toHaveBeenCalled();
+
+    // Typing clears the error and submitting a valid folder succeeds
+    await user.clear(screen.getByTestId('folder-input'));
+    await user.type(screen.getByTestId('folder-input'), '/valid/workspace');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /select folder/i }));
+    expect(await screen.findByTestId('selected-folder')).toHaveTextContent('/valid/workspace');
+  });
 });

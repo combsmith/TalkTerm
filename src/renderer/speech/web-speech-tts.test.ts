@@ -22,6 +22,7 @@ describe('WebSpeechTts', () => {
           text,
           voice: null,
           onend: null,
+          onerror: null,
         };
       }),
     );
@@ -91,6 +92,41 @@ describe('WebSpeechTts', () => {
     expect(tts.isSpeaking).toBe(true);
 
     // Simulate utterance ending
+    captured.utterance?.onend?.();
+
+    expect(tts.isSpeaking).toBe(false);
+    expect(onEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it('finalizes playback and fires onEnd when speech synthesis fails with onerror', () => {
+    const tts = new WebSpeechTts();
+    const onEnd = vi.fn();
+    tts.onEnd = onEnd;
+
+    const captured: {
+      utterance: {
+        text: string;
+        voice: unknown;
+        onend: (() => void) | null;
+        onerror: (() => void) | null;
+      } | null;
+    } = { utterance: null };
+    (window.speechSynthesis.speak as ReturnType<typeof vi.fn>).mockImplementation(
+      (u: {
+        text: string;
+        voice: unknown;
+        onend: (() => void) | null;
+        onerror: (() => void) | null;
+      }) => {
+        captured.utterance = u;
+      },
+    );
+
+    tts.speak('Hello');
+    expect(tts.isSpeaking).toBe(true);
+
+    // Simulate synthesis error followed by duplicate onend — should finalize once
+    captured.utterance?.onerror?.();
     captured.utterance?.onend?.();
 
     expect(tts.isSpeaking).toBe(false);

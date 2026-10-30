@@ -13,6 +13,32 @@ export class SpeechIPCHandler {
     private readonly getWebContents: () => WebContents | null,
   ) {}
 
+  private sendToRenderer(channel: string, ...args: unknown[]): void {
+    const wc = this.getWebContents();
+    if (wc === null) {
+      return;
+    }
+    const maybeDestroyable = wc as { isDestroyed?: () => boolean };
+    if (typeof maybeDestroyable.isDestroyed === 'function' && maybeDestroyable.isDestroyed()) {
+      return;
+    }
+    wc.send(channel, ...args);
+  }
+
+  /**
+   * Invalidates any pending initialization and stops active audio capture
+   * (e.g. when the renderer requests AUDIO_STOP or the BrowserWindow closes).
+   */
+  stopCapture(): void {
+    this.captureGeneration++;
+    try {
+      this.stt.stop();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[SpeechIPCHandler] Error stopping audio:', msg);
+    }
+  }
+
   register(ipcMain: IpcMain): void {
     ipcMain.handle(IPC_CHANNELS.AUDIO_START, async () => {
       try {
@@ -20,25 +46,16 @@ export class SpeechIPCHandler {
         const state = { initFailed: false };
 
         this.stt.onResult = (result) => {
-          const wc = this.getWebContents();
-          if (wc !== null) {
-            wc.send(IPC_CHANNELS.AUDIO_RESULT, result);
-          }
+          this.sendToRenderer(IPC_CHANNELS.AUDIO_RESULT, result);
         };
 
         this.stt.onError = (error) => {
           state.initFailed = true;
-          const wc = this.getWebContents();
-          if (wc !== null) {
-            wc.send(IPC_CHANNELS.AUDIO_ERROR, error);
-          }
+          this.sendToRenderer(IPC_CHANNELS.AUDIO_ERROR, error);
         };
 
         this.stt.onEnd = () => {
-          const wc = this.getWebContents();
-          if (wc !== null) {
-            wc.send(IPC_CHANNELS.AUDIO_END);
-          }
+          this.sendToRenderer(IPC_CHANNELS.AUDIO_END);
         };
 
         await this.stt.initialize();
@@ -50,21 +67,12 @@ export class SpeechIPCHandler {
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error('[SpeechIPCHandler] Failed to start audio:', msg);
-        const wc = this.getWebContents();
-        if (wc !== null) {
-          wc.send(IPC_CHANNELS.AUDIO_ERROR, `Failed to start audio: ${msg}`);
-        }
+        this.sendToRenderer(IPC_CHANNELS.AUDIO_ERROR, `Failed to start audio: ${msg}`);
       }
     });
 
     ipcMain.handle(IPC_CHANNELS.AUDIO_STOP, () => {
-      this.captureGeneration++;
-      try {
-        this.stt.stop();
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error('[SpeechIPCHandler] Error stopping audio:', msg);
-      }
+      this.stopCapture();
     });
 
     // Audio data arrives as ArrayBuffer from renderer — convert to Float32Array

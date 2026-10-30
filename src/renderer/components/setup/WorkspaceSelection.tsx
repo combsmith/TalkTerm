@@ -1,8 +1,15 @@
 import { useEffect, useRef, useState, type ReactElement, type SyntheticEvent } from 'react';
 
 interface WorkspaceSelectionProps {
-  onSelectFolder: (path: string) => void;
+  onSelectFolder: (path: string) => void | Promise<void>;
   onSkip: () => void;
+}
+
+function formatWorkspaceError(err: unknown): string {
+  if (err instanceof Error && err.message !== '') {
+    return err.message.replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, '');
+  }
+  return 'Workspace directory does not exist or is not accessible';
 }
 
 export function WorkspaceSelection({
@@ -12,6 +19,7 @@ export function WorkspaceSelection({
   const inputRef = useRef<HTMLInputElement>(null);
   const [path, setPath] = useState('');
   const [confirmed, setConfirmed] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Auto-focus path input on mount
   useEffect(() => {
@@ -24,18 +32,55 @@ export function WorkspaceSelection({
       return;
     }
     const timer = setTimeout(() => {
-      onSelectFolder(path);
+      try {
+        const result = onSelectFolder(path);
+        if (result instanceof Promise) {
+          result.catch((err: unknown) => {
+            setConfirmed(false);
+            setError(formatWorkspaceError(err));
+          });
+        }
+      } catch (err: unknown) {
+        setConfirmed(false);
+        setError(formatWorkspaceError(err));
+      }
     }, 1200);
     return (): void => {
       clearTimeout(timer);
     };
   }, [confirmed, path, onSelectFolder]);
 
+  function confirmFolder(selectedPath: string): void {
+    const trimmed = selectedPath.trim();
+    if (trimmed === '') {
+      return;
+    }
+    setError(null);
+    const setWorkspace = (
+      window as { electronAPI?: { setWorkspace?: typeof window.electronAPI.setWorkspace } }
+    ).electronAPI?.setWorkspace;
+    if (typeof setWorkspace === 'function') {
+      void Promise.resolve()
+        .then(() => setWorkspace(trimmed))
+        .then((resolved: unknown) => {
+          setPath(
+            typeof resolved === 'string' && resolved.trim() !== '' ? resolved.trim() : trimmed,
+          );
+          setConfirmed(true);
+        })
+        .catch((err: unknown) => {
+          setConfirmed(false);
+          setError(formatWorkspaceError(err));
+        });
+      return;
+    }
+    setPath(trimmed);
+    setConfirmed(true);
+  }
+
   function handleSubmit(e: SyntheticEvent): void {
     e.preventDefault();
-    if (path.trim() !== '') {
-      setConfirmed(true);
-    }
+    confirmFolder(path);
   }
 
   async function handleBrowse(): Promise<void> {
@@ -45,8 +90,7 @@ export function WorkspaceSelection({
     if (typeof browseWorkspace === 'function') {
       const selected = await browseWorkspace();
       if (selected !== null && selected.trim() !== '') {
-        setPath(selected);
-        setConfirmed(true);
+        confirmFolder(selected);
       }
     }
   }
@@ -83,6 +127,9 @@ export function WorkspaceSelection({
               value={path}
               onChange={(e) => {
                 setPath(e.target.value);
+                if (error !== null) {
+                  setError(null);
+                }
               }}
               placeholder="/path/to/your/project"
               className="flex-1 rounded-lg border border-text-muted-on-dark bg-stage-bg px-4 py-3 text-body text-text-on-dark outline-none transition-colors focus:border-primary"
@@ -98,6 +145,11 @@ export function WorkspaceSelection({
               Browse...
             </button>
           </div>
+          {error !== null && (
+            <p className="text-small text-semantic-error" role="alert">
+              {error}
+            </p>
+          )}
           <button
             type="submit"
             disabled={path.trim() === ''}

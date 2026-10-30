@@ -16,6 +16,7 @@ import { validateString } from './validate-string';
 
 export interface WebContents {
   send(channel: string, ...args: unknown[]): void;
+  isDestroyed?(): boolean;
 }
 
 export class AgentIPCHandler implements IPCRegistrar {
@@ -25,10 +26,18 @@ export class AgentIPCHandler implements IPCRegistrar {
     private readonly sessionRepo?: SessionRepository,
   ) {}
 
+  private getUsableWebContents(): WebContents | null {
+    const wc = this.getWebContents();
+    if (wc === null || wc.isDestroyed?.() === true) {
+      return null;
+    }
+    return wc;
+  }
+
   register(ipcMain: IPCMain): void {
     // Set up event forwarding once during registration
     this.router.onEvent((event) => {
-      const webContents = this.getWebContents();
+      const webContents = this.getUsableWebContents();
       if (webContents !== null) {
         webContents.send(IPC_CHANNELS.AGENT_MESSAGE, event);
       }
@@ -37,7 +46,7 @@ export class AgentIPCHandler implements IPCRegistrar {
     ipcMain.handle(
       IPC_CHANNELS.AGENT_ACTION,
       async (_event: unknown, sessionId: unknown, message: unknown) => {
-        const webContents = this.getWebContents();
+        const webContents = this.getUsableWebContents();
         if (webContents === null) {
           throw new Error('No active window');
         }
@@ -55,7 +64,7 @@ export class AgentIPCHandler implements IPCRegistrar {
             } catch (err: unknown) {
               console.error('[AgentIPC] Error handling agent action:', err);
               const category = classifyError(err);
-              webContents.send(IPC_CHANNELS.AGENT_MESSAGE, {
+              this.getUsableWebContents()?.send(IPC_CHANNELS.AGENT_MESSAGE, {
                 type: 'error',
                 userMessage: createUserFriendlyMessage(category),
                 recoveryOptions: recoveryOptionsForCategory(category),
