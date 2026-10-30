@@ -257,6 +257,7 @@ function bootstrap(): void {
   const speechHandler = new SpeechIPCHandler(sherpaOnnxStt, getActiveWebContents);
   onMainWindowClosed = (): void => {
     speechHandler.stopCapture();
+    agentHandler.cancelActiveOperations();
   };
   agentHandler.register(ipcMain);
   settingsHandler.register(ipcMain);

@@ -34,6 +34,15 @@ export class AgentIPCHandler implements IPCRegistrar {
     return wc;
   }
 
+  /**
+   * Cancels the active agent turn (including any pending tool-permission prompt)
+   * and invalidates queued router operations (e.g. on AGENT_CANCEL or window close).
+   */
+  cancelActiveOperations(): void {
+    cancelRouterOperations(this.router);
+    this.router.cancel();
+  }
+
   register(ipcMain: IPCMain): void {
     // Set up event forwarding once during registration
     this.router.onEvent((event) => {
@@ -77,8 +86,7 @@ export class AgentIPCHandler implements IPCRegistrar {
     );
 
     ipcMain.on(IPC_CHANNELS.AGENT_CANCEL, () => {
-      cancelRouterOperations(this.router);
-      this.router.cancel();
+      this.cancelActiveOperations();
     });
 
     ipcMain.on(IPC_CHANNELS.AGENT_CONFIRM, (_event: unknown, approved: unknown) => {

@@ -336,4 +336,57 @@ describe('AgentIPCHandler', () => {
     expect(router.cancel).toHaveBeenCalledTimes(1);
     expect(callOrder).toEqual(['start-1', 'end-1']);
   });
+
+  it('cancels active and queued operations on cancelActiveOperations and ignores destroyed WebContents', async () => {
+    const router = createMockRouter();
+    const destroyedSend = vi.fn();
+    let eventForwarder: ((event: AgentEvent) => void) | undefined;
+    vi.mocked(router.onEvent).mockImplementation((cb) => {
+      eventForwarder = cb;
+    });
+
+    let finishFirst!: () => void;
+    const callOrder: string[] = [];
+    vi.mocked(router.sendMessage)
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            callOrder.push('start-1');
+            finishFirst = () => {
+              callOrder.push('end-1');
+              resolve();
+            };
+          }),
+      )
+      .mockImplementationOnce(() => {
+        callOrder.push('start-2');
+        return Promise.resolve();
+      });
+
+    let destroyed = false;
+    const handler = new AgentIPCHandler(router, () => ({
+      send: destroyedSend,
+      isDestroyed: () => destroyed,
+    }));
+    handler.register(ipcMain);
+
+    const agentAction = handlers.get(IPC_CHANNELS.AGENT_ACTION);
+    const p1 = agentAction?.({}, 'session-1', 'first');
+    const p2 = agentAction?.({}, 'session-1', 'second');
+
+    await vi.waitFor(() => {
+      expect(callOrder).toEqual(['start-1']);
+    });
+
+    // Simulate window closing while turn is active
+    destroyed = true;
+    handler.cancelActiveOperations();
+    eventForwarder?.({ type: 'text', content: 'dropped' });
+    expect(destroyedSend).not.toHaveBeenCalled();
+
+    finishFirst();
+    await Promise.all([p1, p2]);
+    expect(router.cancel).toHaveBeenCalledTimes(1);
+    expect(callOrder).toEqual(['start-1', 'end-1']);
+  });
 });
