@@ -1069,7 +1069,7 @@ describe('ClaudeSdkBackend', () => {
       expect(events.some((e) => e.type === 'complete')).toBe(false);
     });
 
-    it('maps task_notification failed to error event', async () => {
+    it('maps task_notification failed to failed progress event instead of turn error', async () => {
       const sdkMock = mockSdkModule([
         {
           type: 'system',
@@ -1086,11 +1086,11 @@ describe('ClaudeSdkBackend', () => {
       const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
       const events = await collectEvents(backend.sendMessage('sess-42', 'hello'));
 
-      const errorEvent = events.find((e) => e.type === 'error');
-      expect(errorEvent).toBeDefined();
-      if (errorEvent?.type === 'error') {
-        expect(errorEvent.userMessage).toBe('Build failed');
-      }
+      const progressEvent = events.find(
+        (e) => e.type === 'progress' && e.status === 'failed' && e.step === 'Build failed',
+      );
+      expect(progressEvent).toBeDefined();
+      expect(events.some((e) => e.type === 'error')).toBe(false);
     });
 
     it('maps task_progress with last_tool_name to tool-call event', async () => {
@@ -2047,8 +2047,18 @@ describe('ClaudeSdkBackend', () => {
       const backend = new ClaudeSdkBackend(auditRepo, () => 'sk-ant-test-key');
       await collectEvents(backend.sendMessage('sess-42', 'hello'));
 
-      // At least user:message and agent:response
+      // At least user:message and agent:response with non-transcript metadata
       expect(auditRepo.append).toHaveBeenCalledTimes(2);
+      const calls = (auditRepo.append as ReturnType<typeof vi.fn>).mock.calls as [
+        [{ actionType: string; userIntent: string; details: Record<string, unknown> }],
+        [{ actionType: string; userIntent: string; details: Record<string, unknown> }],
+      ];
+      expect(calls[0][0].actionType).toBe('user:message');
+      expect(calls[0][0].userIntent).toBe('User sent a message');
+      expect(calls[0][0].details).toEqual({ charLength: 5 });
+      expect(calls[1][0].actionType).toBe('agent:response');
+      expect(calls[1][0].userIntent).toBe('Agent sent a response');
+      expect(calls[1][0].details).toEqual({ charLength: 'Audited response'.length });
     });
 
     it('continues even when audit repo throws', async () => {

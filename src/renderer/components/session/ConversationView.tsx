@@ -479,13 +479,15 @@ export function ConversationView({
           }
           if (taskStepsRef.current.length > 0 && displayModeRef.current === 'task-progress') {
             const now = Date.now();
+            const isCancelled = event.summary.toLowerCase().includes('cancelled') || !wasTurnActive;
+            const finalizedStatus: TaskStep['status'] = isCancelled ? 'failed' : 'completed';
             const finalizedSteps = taskStepsRef.current.map((s): TaskStep => {
               if (s.status !== 'in-progress') return s;
               const startTime = toolStartTimeRef.current.get(s.name);
               const elapsed = startTime !== undefined ? now - startTime : undefined;
               return {
                 name: s.name,
-                status: 'completed',
+                status: finalizedStatus,
                 ...(elapsed !== undefined ? { elapsedMs: elapsed } : {}),
               };
             });

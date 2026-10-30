@@ -620,6 +620,14 @@ describe('ConversationView', () => {
     expect(screen.getByText('✗')).toBeInTheDocument();
   });
 
+  it('marks in-progress tool step as failed when turn completes with cancellation', () => {
+    render(<ConversationView userName="DJ" avatarName="Mary" sessionId="s1" />);
+    simulateAgentEvent({ type: 'tool-call', toolName: 'bash', toolInput: { command: 'sleep 10' } });
+    simulateAgentEvent({ type: 'complete', summary: 'Cancelled by user' });
+    expect(screen.getByText('✗')).toBeInTheDocument();
+    expect(screen.queryByText('✓')).toBeNull();
+  });
+
   it('tracks multiple tool steps in TaskProgress', () => {
     render(<ConversationView userName="DJ" avatarName="Mary" sessionId="s1" />);
     simulateAgentEvent({ type: 'tool-call', toolName: 'bash', toolInput: { command: 'ls' } });

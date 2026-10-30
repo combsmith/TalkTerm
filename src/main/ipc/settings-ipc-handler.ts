@@ -125,7 +125,7 @@ export class SettingsIPCHandler implements IPCRegistrar {
       const validPath = trimmedPath !== '' ? trimmedPath : os.tmpdir();
       let stat: fs.Stats;
       try {
-        stat = fs.statSync(validPath);
+        stat = fs.statSync(validPath); // NOSONAR(tssecurity:S2083) -- intentional directory existence check for user-chosen local workspace
       } catch {
         throw new Error('Workspace directory does not exist or is not accessible');
       }

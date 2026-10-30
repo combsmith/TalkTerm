@@ -253,7 +253,11 @@ export class ClaudeSdkBackend implements AgentBackend {
     this.abortController = controller;
     // Audit logging is best-effort — don't let it break the conversation
     try {
-      this.auditRepo.append(createAuditEntry(sessionId, 'user:message', 'success', message));
+      this.auditRepo.append(
+        createAuditEntry(sessionId, 'user:message', 'success', 'User sent a message', {
+          charLength: message.length,
+        }),
+      );
     } catch {
       // Audit failure is non-fatal
     }
@@ -868,7 +872,9 @@ export class ClaudeSdkBackend implements AgentBackend {
       history.push({ role: 'assistant', content: textBlock.text });
       try {
         this.auditRepo.append(
-          createAuditEntry(sessionId, 'agent:response', 'success', textBlock.text),
+          createAuditEntry(sessionId, 'agent:response', 'success', 'Agent sent a response', {
+            charLength: textBlock.text.length,
+          }),
         );
       } catch {
         // Audit failure is non-fatal
@@ -1003,11 +1009,9 @@ export class ClaudeSdkBackend implements AgentBackend {
       }
       return [
         {
-          type: 'error',
-          userMessage: sysMsg.summary ?? 'A background task did not complete successfully.',
-          recoveryOptions: [
-            { label: 'Try again', action: 'retry', description: 'Retry the last action' },
-          ],
+          type: 'progress',
+          step: sysMsg.summary ?? 'A background task did not complete successfully.',
+          status: 'failed',
         },
       ];
     }
