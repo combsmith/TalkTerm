@@ -318,4 +318,30 @@ describe('IpcSpeechStt', () => {
     });
     expect(stt.isListening).toBe(true);
   });
+
+  it('calls stopAudioCapture when AudioContext setup throws after startAudioCapture succeeds', async () => {
+    vi.stubGlobal(
+      'AudioContext',
+      vi.fn(function () {
+        throw new Error('AudioContext failed');
+      }),
+    );
+
+    const stt = new IpcSpeechStt();
+    const onError = vi.fn();
+    stt.onError = onError;
+
+    stt.start();
+    await vi.waitFor(() => {
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('Microphone access failed: AudioContext failed'),
+        }),
+      );
+    });
+
+    expect(mockStartAudioCapture).toHaveBeenCalledTimes(1);
+    expect(mockStopAudioCapture).toHaveBeenCalledTimes(1);
+    expect(mockTrackStop).toHaveBeenCalledTimes(1);
+  });
 });

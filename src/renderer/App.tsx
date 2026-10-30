@@ -140,9 +140,6 @@ export function App(): ReactElement | null {
               .retryAdminCheck()
               .then((result: AdminCheckResult) => {
                 setAdminResult(result);
-                if (result.isAdmin) {
-                  setPhase('setup');
-                }
               })
               .catch(() => {
                 // Admin check retry failed — keep current state

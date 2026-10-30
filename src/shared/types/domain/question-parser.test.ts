@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { parseQuestions } from './question-parser';
+import { parseQuestions, stripMarkdown } from './question-parser';
+
+describe('stripMarkdown', () => {
+  it('preserves snake_case identifiers inside inline code and in plain text while stripping emphasis', () => {
+    expect(stripMarkdown('Run `npm run db_migrate_prod` before restarting.')).toBe(
+      'Run npm run db_migrate_prod before restarting.',
+    );
+    expect(stripMarkdown('Check src/my_file_name.ts and _italic text_ or __bold text__.')).toBe(
+      'Check src/my_file_name.ts and italic text or bold text.',
+    );
+  });
+});
 
 describe('parseQuestions', () => {
   // --- Detection threshold ---

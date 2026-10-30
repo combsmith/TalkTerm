@@ -106,9 +106,22 @@ describe('App', () => {
     expect(screen.getByText(/TalkTerm needs admin privileges/i)).toBeInTheDocument();
   });
 
-  it('retry button re-checks admin privileges', async () => {
+  it('retry button re-checks admin privileges and assesses saved launch state for returning users', async () => {
     const user = userEvent.setup();
     mockRetryAdminCheck.mockResolvedValue({ isAdmin: true, platform: 'darwin' });
+    vi.mocked(window.electronAPI.assessLaunchState).mockResolvedValue({
+      apiKeyValid: true,
+      profileComplete: true,
+      avatarSelected: true,
+      workspaceSelected: true,
+      workspacePath: '/saved/workspace',
+    });
+    vi.mocked(window.electronAPI.getProfile).mockResolvedValue({
+      name: 'RetryAlice',
+      avatarPersonaId: 'mary',
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
 
     render(<App />);
     act(() => {
@@ -117,6 +130,8 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: /retry/i }));
     expect(mockRetryAdminCheck).toHaveBeenCalledOnce();
+    expect(await screen.findByText(/Hey RetryAlice/i)).toBeInTheDocument();
+    expect(window.electronAPI.getIncompleteSessions).toHaveBeenCalledWith('/saved/workspace');
   });
 
   it('quit button calls quitApp', async () => {

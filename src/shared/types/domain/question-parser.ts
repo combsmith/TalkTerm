@@ -2,17 +2,26 @@
  * Strip markdown formatting from a string, returning plain text.
  */
 export function stripMarkdown(text: string): string {
-  return text
+  const codeSpans: string[] = [];
+  const withPlaceholders = text.replace(/`([^`]+)`/g, (_match, code: string) => {
+    const idx = codeSpans.length;
+    codeSpans.push(code);
+    return `\u0000CODE_${String(idx)}\u0000`;
+  });
+
+  const stripped = withPlaceholders
     .replace(/\*\*(.+?)\*\*/g, '$1') // bold
     .replace(/\*(.+?)\*/g, '$1') // italic
-    .replace(/__(.+?)__/g, '$1') // bold (underscore)
-    .replace(/_(.+?)_/g, '$1') // italic (underscore)
+    .replace(/(?<![\w])__(.+?)__(?![\w])/g, '$1') // bold (underscore at word boundaries)
+    .replace(/(?<![\w])_([^_\s\n](?:[^_\n]*?[^_\s\n])?)_(?![\w])/g, '$1') // italic (underscore at word boundaries)
     .replace(/~~(.+?)~~/g, '$1') // strikethrough
-    .replace(/`(.+?)`/g, '$1') // inline code
     .replace(/^#{1,6}[ \t]+/gm, '') // headings
     .replace(/^[ \t]*[-*+][ \t]+/gm, '') // list items
     .replace(/^[ \t]*\d+[.)][ \t]+/gm, '') // numbered items
-    .replace(/\[([^\][]+)\]\([^()]+\)/g, '$1') // links
+    .replace(/\[([^\][]+)\]\([^()]+\)/g, '$1'); // links
+
+  return stripped
+    .replace(/\u0000CODE_(\d+)\u0000/g, (_match, idxStr: string) => codeSpans[Number(idxStr)] ?? '')
     .trim();
 }
 

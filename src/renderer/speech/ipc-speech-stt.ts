@@ -71,6 +71,10 @@ export class IpcSpeechStt implements SpeechToText {
     this.teardownCapture();
 
     // Tell main process to stop and track completion so a rapid restart ignores stale AUDIO_END
+    this.requestMainStop();
+  }
+
+  private requestMainStop(): void {
     const stopPromise = Promise.resolve(window.electronAPI.stopAudioCapture()).catch(
       () => undefined,
     );
@@ -192,8 +196,13 @@ export class IpcSpeechStt implements SpeechToText {
       }
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[IpcSpeechStt] Failed to start audio capture:', msg);
+      const shouldStopMain = this.mainCaptureActive;
       this._isListening = false;
+      this.captureGeneration++;
       this.teardownCapture();
+      if (shouldStopMain) {
+        this.requestMainStop();
+      }
       this.onError?.(new Error(`Microphone access failed: ${msg}`));
     }
   }
