@@ -228,6 +228,29 @@ describe('parseMarkdownTable', () => {
       ['Beta', '---', '-'],
     ]);
   });
+
+  it('preserves escaped pipes and pipes inside inline code spans without splitting cells', () => {
+    const table = [
+      '| Command                | Purpose               |',
+      '|------------------------|-----------------------|',
+      '| cat app.log \\| head   | Inspect start of log  |',
+      '| `grep foo | wc -l`     | Count matching lines  |',
+    ].join('\n');
+    expect(detectContentType(table)).toBe('comparison-table');
+    const result = parseMarkdownTable(table);
+    expect(result.headers).toEqual(['Command', 'Purpose']);
+    expect(result.rows).toEqual([
+      ['cat app.log | head', 'Inspect start of log'],
+      ['`grep foo | wc -l`', 'Count matching lines'],
+    ]);
+  });
+
+  it('falls back to document when a table row has extra unescaped cells beyond the headers', () => {
+    const malformedTable = ['| Command | Purpose |', '|---------|---------|', '| a | b | c |'].join(
+      '\n',
+    );
+    expect(detectContentType(malformedTable)).toBe('document');
+  });
 });
 
 describe('parsePlanContent', () => {

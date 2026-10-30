@@ -225,6 +225,7 @@ describe('App', () => {
 
     // Skip workspace selection
     await user.click(screen.getByRole('button', { name: /skip/i }));
+    expect(window.electronAPI.setWorkspace).toHaveBeenCalledWith('');
 
     // Avatar selection
     await user.click(screen.getByRole('button', { name: /select mary/i }));
@@ -235,6 +236,7 @@ describe('App', () => {
       { name: /retry session/i },
       { timeout: 3000 },
     );
+    expect(window.electronAPI.getIncompleteSessions).toHaveBeenCalledWith('');
     expect(screen.getByRole('alert')).toHaveTextContent(/IPC error/i);
 
     await user.click(retryBtn);

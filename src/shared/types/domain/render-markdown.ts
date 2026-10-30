@@ -51,13 +51,19 @@ const TABLE_ROW_LINE = /^\|.+\|$/;
 const CLUSTER_HEADER_LINE = /^\*\*[^*]+\*\*$/;
 const CLUSTER_ITEM_LINE = /^[-*][ \t]+\S/;
 
-/** Check whether every non-empty line in `text` is part of the markdown table. */
+/** Check whether every non-empty line in `text` is part of the markdown table and lossless. */
 function isLosslessTable(text: string): boolean {
   const lines = text
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => l !== '');
-  return lines.every((l) => TABLE_ROW_LINE.test(l));
+  if (!lines.every((l) => TABLE_ROW_LINE.test(l))) {
+    return false;
+  }
+  const parsed = parseMarkdownTable(text);
+  return (
+    parsed.headers.length >= 2 && parsed.rows.every((row) => row.length <= parsed.headers.length)
+  );
 }
 
 /** Check whether every non-empty line in `text` is preserved by `parseClusteredContent`. */
@@ -77,6 +83,34 @@ export interface TableData {
   rows: string[][];
 }
 
+function splitTableRowCells(line: string): string[] {
+  const inner = line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/(?<!\\)\|$/, '');
+  const cells: string[] = [];
+  let current = '';
+  let inCode = false;
+
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i] ?? '';
+    if (ch === '\\' && inner[i + 1] === '|') {
+      current += '|';
+      i++;
+    } else if (ch === '`') {
+      inCode = !inCode;
+      current += ch;
+    } else if (ch === '|' && !inCode) {
+      cells.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  cells.push(current.trim());
+  return cells;
+}
+
 /** Parse a markdown table into structured header + row data. */
 export function parseMarkdownTable(text: string): TableData {
   const lines = text.split('\n').filter((l) => l.trim().startsWith('|'));
@@ -84,17 +118,9 @@ export function parseMarkdownTable(text: string): TableData {
     return { headers: [], rows: [] };
   }
 
-  const parseCells = (line: string): string[] =>
-    line
-      .trim()
-      .replace(/^\|/, '')
-      .replace(/\|$/, '')
-      .split('|')
-      .map((c) => c.trim());
-
-  const headers = parseCells(lines[0] ?? '');
+  const headers = splitTableRowCells(lines[0] ?? '');
   // Skip the separator line (index 1)
-  const rows = lines.slice(2).map(parseCells);
+  const rows = lines.slice(2).map(splitTableRowCells);
   return { headers, rows };
 }
 

@@ -1,3 +1,4 @@
+import os from 'node:os';
 import { MVP_PERSONAS } from '../../shared/types/domain/avatar-persona';
 import { IPC_CHANNELS } from '../../shared/types/domain/ipc-channels';
 import type { KeyManager } from '../security/safe-storage-key-manager';
@@ -116,8 +117,13 @@ export class SettingsIPCHandler implements IPCRegistrar {
     });
 
     ipcMain.handle(IPC_CHANNELS.WORKSPACE_SET, (_event: unknown, workspacePath: unknown) => {
-      const validPath = validateString(workspacePath, 'Workspace path');
+      if (typeof workspacePath !== 'string') {
+        throw new Error('Workspace path must be a non-empty string');
+      }
+      const trimmedPath = workspacePath.trim();
+      const validPath = trimmedPath !== '' ? trimmedPath : os.tmpdir();
       this.configStore.set('workspacePath', validPath);
+      return validPath;
     });
   }
 }

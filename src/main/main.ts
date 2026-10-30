@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { app, BrowserWindow, dialog, safeStorage, session, shell } from 'electron';
 import { IPC_CHANNELS } from '../shared/types/domain/ipc-channels';
@@ -255,10 +256,18 @@ function bootstrap(): void {
     app.quit();
   });
   ipcMain.handle(IPC_CHANNELS.SESSION_GET_INCOMPLETE, (_event: unknown, workspacePath: unknown) => {
-    if (typeof workspacePath !== 'string' || workspacePath === '') {
+    if (typeof workspacePath !== 'string') {
       return [];
     }
-    return sessionRepo.findIncomplete(workspacePath);
+    const trimmed = workspacePath.trim();
+    const storedWorkspace = configStore.get('workspacePath');
+    const resolvedPath =
+      trimmed !== ''
+        ? trimmed
+        : typeof storedWorkspace === 'string' && storedWorkspace.trim() !== ''
+          ? storedWorkspace.trim()
+          : os.tmpdir();
+    return sessionRepo.findIncomplete(resolvedPath);
   });
 
   // 6. Grant microphone permission for Web Speech API (STT) only to trusted app URLs

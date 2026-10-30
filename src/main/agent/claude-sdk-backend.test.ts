@@ -707,6 +707,44 @@ describe('ClaudeSdkBackend', () => {
       expect(turn2Attempt3[0].options.continue).toBe(false);
       expect(turn2Attempt3[0].options.resume).toBeUndefined();
     });
+
+    it('starts a fresh SDK conversation (continue: false) when a prior sendMessage failed before obtaining an SDK session ID', async () => {
+      let currentKey: string | null = null;
+      const sdkMock = mockSdkModule([
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: 'First real SDK turn' }] },
+          session_id: 'sdk-fresh-1',
+        },
+        {
+          type: 'result',
+          subtype: 'success',
+          result: 'Done',
+          total_cost_usd: 0.001,
+          num_turns: 1,
+          session_id: 'sdk-fresh-1',
+        },
+      ]);
+      installSdkMock(sdkMock);
+
+      const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => currentKey);
+
+      // Attempt 1 fails pre-SDK because no API key is configured yet
+      const failedEvents = await collectEvents(backend.sendMessage('app-sess-fresh', 'hello'));
+      expect(failedEvents[0]?.type).toBe('error');
+      expect(sdkMock.query).not.toHaveBeenCalled();
+
+      // Configure API key and retry in the same application session
+      currentKey = 'sk-ant-api03-valid';
+      await collectEvents(backend.sendMessage('app-sess-fresh', 'hello'));
+
+      expect(sdkMock.query).toHaveBeenCalledTimes(1);
+      const firstSdkCall = sdkMock.query.mock.calls[0] as [
+        { options: { continue?: boolean; resume?: string } },
+      ];
+      expect(firstSdkCall[0].options.continue).toBe(false);
+      expect(firstSdkCall[0].options.resume).toBeUndefined();
+    });
   });
 
   describe('SDK message filtering', () => {

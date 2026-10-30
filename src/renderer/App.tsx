@@ -95,9 +95,9 @@ export function App(): ReactElement | null {
     }
   }, [phase, currentStep]);
 
-  // Fetch incomplete sessions when entering greeting phase with a real workspace
+  // Fetch incomplete sessions when entering greeting phase (including default workspace when skipped)
   useEffect(() => {
-    if (phase === 'greeting' && incompleteSessions.length === 0 && workspacePath !== '') {
+    if (phase === 'greeting' && incompleteSessions.length === 0) {
       void window.electronAPI
         .getIncompleteSessions(workspacePath)
         .then((sessions) => {
@@ -231,7 +231,17 @@ export function App(): ReactElement | null {
               });
           }}
           onSkip={() => {
-            completeCurrentStep();
+            void window.electronAPI
+              .setWorkspace('')
+              .then((resolved: unknown) => {
+                if (typeof resolved === 'string' && resolved !== '') {
+                  setWorkspacePath(resolved);
+                }
+                completeCurrentStep();
+              })
+              .catch(() => {
+                completeCurrentStep();
+              });
           }}
         />
       );

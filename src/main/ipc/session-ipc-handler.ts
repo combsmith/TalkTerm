@@ -30,7 +30,20 @@ export class SessionIPCHandler implements IPCRegistrar {
         throw new Error('workspacePath must be a non-empty string');
       }
       const trimmedPath = workspacePath.trim();
-      const validPath = trimmedPath !== '' ? trimmedPath : os.tmpdir();
+      const storedWorkspace = this.configStore.get('workspacePath');
+      const validPath =
+        trimmedPath !== ''
+          ? trimmedPath
+          : typeof storedWorkspace === 'string' && storedWorkspace.trim() !== ''
+            ? storedWorkspace.trim()
+            : os.tmpdir();
+      if (
+        !this.configStore.has('workspacePath') ||
+        typeof storedWorkspace !== 'string' ||
+        storedWorkspace.trim() === ''
+      ) {
+        this.configStore.set('workspacePath', validPath);
+      }
       const profile = this.configStore.get('userProfile') as
         | { avatarPersonaId: string | null }
         | undefined;

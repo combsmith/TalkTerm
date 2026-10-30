@@ -6,6 +6,8 @@ import type { SherpaOnnxStt } from '../speech/sherpa-onnx-stt';
  * SpeechIPCHandler — bridges renderer audio IPC to the main-process SherpaOnnxStt.
  */
 export class SpeechIPCHandler {
+  private captureGeneration = 0;
+
   constructor(
     private readonly stt: SherpaOnnxStt,
     private readonly getWebContents: () => WebContents | null,
@@ -14,6 +16,7 @@ export class SpeechIPCHandler {
   register(ipcMain: IpcMain): void {
     ipcMain.handle(IPC_CHANNELS.AUDIO_START, async () => {
       try {
+        const generation = ++this.captureGeneration;
         const state = { initFailed: false };
 
         this.stt.onResult = (result) => {
@@ -39,7 +42,7 @@ export class SpeechIPCHandler {
         };
 
         await this.stt.initialize();
-        if (state.initFailed) {
+        if (state.initFailed || generation !== this.captureGeneration) {
           return;
         }
 
@@ -55,6 +58,7 @@ export class SpeechIPCHandler {
     });
 
     ipcMain.handle(IPC_CHANNELS.AUDIO_STOP, () => {
+      this.captureGeneration++;
       try {
         this.stt.stop();
       } catch (err: unknown) {

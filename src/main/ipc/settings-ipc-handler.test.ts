@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/unbound-method -- vi.fn() mocks */
+import os from 'node:os';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { IPC_CHANNELS } from '../../shared/types/domain/ipc-channels';
 import type { KeyManager } from '../security/safe-storage-key-manager';
@@ -94,6 +95,12 @@ describe('SettingsIPCHandler', () => {
     const setWorkspace = handlers.get(IPC_CHANNELS.WORKSPACE_SET);
     setWorkspace?.({}, '/tmp/custom-workspace');
     expect(store.get('workspacePath')).toBe('/tmp/custom-workspace');
+
+    // Empty workspace path (skip) resolves to and persists os.tmpdir()
+    const resolvedDefault = setWorkspace?.({}, '');
+    expect(resolvedDefault).toBe(os.tmpdir());
+    expect(store.get('workspacePath')).toBe(os.tmpdir());
+    expect(() => setWorkspace?.({}, 123)).toThrow('Workspace path must be a non-empty string');
   });
 
   it('returns none when no key stored', () => {

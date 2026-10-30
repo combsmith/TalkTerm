@@ -258,10 +258,6 @@ export class ClaudeSdkBackend implements AgentBackend {
       // Audit failure is non-fatal
     }
 
-    // Track user message in conversation history
-    const history = this.getOrCreateHistory(sessionId);
-    history.push({ role: 'user', content: message });
-
     const useSubscription = this.getAuthMode() === 'claude-subscription';
 
     if (!useSubscription) {
@@ -291,6 +287,10 @@ export class ClaudeSdkBackend implements AgentBackend {
       };
       return;
     }
+
+    // Track user message in conversation history once pre-checks succeed
+    const history = this.getOrCreateHistory(sessionId);
+    history.push({ role: 'user', content: message });
 
     const apiKey = useSubscription ? null : this.getApiKey();
     yield* this.runSdkTurn(sdk, apiKey, sessionId, message, workspacePath);
@@ -644,8 +644,6 @@ export class ClaudeSdkBackend implements AgentBackend {
     if (persistedSdkId !== null) {
       this.sdkSessionIds.set(sessionId, persistedSdkId);
     }
-    const history = this.sessionHistory.get(sessionId);
-    const hasPriorTurns = (history !== undefined && history.length > 1) || persistedSdkId !== null;
     let resumeFailed = false;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -654,7 +652,7 @@ export class ClaudeSdkBackend implements AgentBackend {
       }
       this.lastTurnError = '';
 
-      const useContinue = hasPriorTurns && !resumeFailed;
+      const useContinue = persistedSdkId !== null && !resumeFailed;
       const options = this.buildSdkOptions(
         apiKey,
         {
@@ -662,7 +660,7 @@ export class ClaudeSdkBackend implements AgentBackend {
           maxTurns: 25,
           maxBudgetUsd: 1.0,
           continue: useContinue,
-          ...(persistedSdkId !== null && !resumeFailed ? { resume: persistedSdkId } : {}),
+          ...(useContinue ? { resume: persistedSdkId } : {}),
         },
         bmadContext,
       );

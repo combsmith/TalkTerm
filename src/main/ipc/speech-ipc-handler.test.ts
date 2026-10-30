@@ -157,6 +157,30 @@ describe('SpeechIPCHandler', () => {
     expect(mockStt.start).not.toHaveBeenCalled();
   });
 
+  it('does not call stt.start when AUDIO_STOP is invoked while initialize is pending', async () => {
+    let resolveInit!: () => void;
+    mockStt.initialize = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveInit = resolve;
+        }),
+    );
+    handler.register(mockIpcMain as IpcMain);
+
+    const startHandler = ipcHandlers[IPC_CHANNELS.AUDIO_START];
+    const stopHandler = ipcHandlers[IPC_CHANNELS.AUDIO_STOP];
+    const startPromise = startHandler?.({} as IpcMainInvokeEvent);
+
+    // Cancel capture before initialization resolves
+    await stopHandler?.({} as IpcMainInvokeEvent);
+    expect(mockStt.stop).toHaveBeenCalledTimes(1);
+
+    resolveInit();
+    await startPromise;
+
+    expect(mockStt.start).not.toHaveBeenCalled();
+  });
+
   it('stops STT on AUDIO_STOP', () => {
     handler.register(mockIpcMain as IpcMain);
 
