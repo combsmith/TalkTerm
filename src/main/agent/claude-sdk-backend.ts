@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   classifyError,
@@ -13,6 +12,7 @@ import type {
   AuthMode,
 } from '../../shared/types/ports/agent-backend';
 import type { AuditRepository } from '../../shared/types/ports/audit-repository';
+import { isReadWithinWorkspace, READ_ONLY_TOOLS, readContextFile } from './workspace-files';
 
 /**
  * Subset of the SDK module we actually use.
@@ -65,11 +65,10 @@ interface PendingPermission {
 
 /** Build a human-readable description of a tool request for the confirm prompt. */
 function describeToolRequest(toolName: string, input: Record<string, unknown>): string {
-  const filePath = input['file_path'];
-  const command = input['command'];
-  const target =
-    typeof filePath === 'string' ? filePath : typeof command === 'string' ? command : toolName;
-  return `${toolName}: ${target}`;
+  const target = ['file_path', 'command', 'path', 'pattern']
+    .map((key) => input[key])
+    .find((value): value is string => typeof value === 'string');
+  return `${toolName}: ${target ?? toolName}`;
 }
 
 /**
@@ -341,11 +340,30 @@ export class ClaudeSdkBackend implements AgentBackend {
   }
 
   /**
-   * SDK permission callback: surfaces a confirm-request to the UI and waits for the
-   * user's decision (delivered through respondToConfirmation) before the tool runs.
+   * SDK permission callback for a query running in `workspacePath`. Read-only tools are
+   * allowed when every path they touch resolves inside the workspace; everything else
+   * goes to the user.
+   */
+  private createCanUseTool(workspacePath: string | undefined): SdkCanUseTool {
+    return (toolName, input, options) => {
+      // Other tools are queued synchronously so prompts keep the SDK's request order.
+      if (!READ_ONLY_TOOLS.has(toolName)) {
+        return this.askUser(toolName, input, options);
+      }
+      return isReadWithinWorkspace(toolName, input, workspacePath).then((inside) =>
+        inside
+          ? { behavior: 'allow', updatedInput: input }
+          : this.askUser(toolName, input, options),
+      );
+    };
+  }
+
+  /**
+   * Surfaces a confirm-request to the UI and waits for the user's decision (delivered
+   * through respondToConfirmation) before the tool runs.
    * Concurrent requests (parallel tool calls) are queued and presented one at a time.
    */
-  private readonly canUseTool: SdkCanUseTool = (toolName, input, { signal }) =>
+  private readonly askUser: SdkCanUseTool = (toolName, input, { signal }) =>
     new Promise<SdkPermissionResult>((resolve) => {
       if (signal.aborted) {
         resolve({ behavior: 'deny', message: 'Request was cancelled.', interrupt: true });
@@ -414,6 +432,7 @@ export class ClaudeSdkBackend implements AgentBackend {
   /**
    * Try to read the BMAD agent definition from a candidate directory.
    * Returns [agentContent, configContent] or null if agent file not found.
+   * Each file must resolve inside `dir`, be a regular file and stay under the size cap.
    */
   private async tryLoadBmadFromDir(
     dir: string,
@@ -430,8 +449,8 @@ export class ClaudeSdkBackend implements AgentBackend {
     const configPath = path.join(dir, '_bmad', 'bmm', 'config.yaml');
 
     const [legacyResult, configResult] = await Promise.allSettled([
-      readFile(legacyAgentPath, 'utf-8'),
-      readFile(configPath, 'utf-8'),
+      readContextFile(legacyAgentPath, dir),
+      readContextFile(configPath, dir),
     ]);
 
     let agentContent: string | null =
@@ -439,7 +458,7 @@ export class ClaudeSdkBackend implements AgentBackend {
     let resolvedAgentPath = legacyAgentPath;
 
     if (agentContent === null) {
-      const [skillResult] = await Promise.allSettled([readFile(skillAgentPath, 'utf-8')]);
+      const [skillResult] = await Promise.allSettled([readContextFile(skillAgentPath, dir)]);
       if (skillResult.status === 'fulfilled') {
         agentContent = skillResult.value;
         resolvedAgentPath = skillAgentPath;
@@ -580,9 +599,8 @@ export class ClaudeSdkBackend implements AgentBackend {
         append: appendPrompt,
       },
       permissionMode: 'default',
-      allowedTools: ['Read', 'Glob', 'Grep', 'LS'],
       promptSuggestions: true,
-      canUseTool: this.canUseTool,
+      canUseTool: this.createCanUseTool(overrides.cwd),
       ...overrides,
     };
     if (this.getAuthMode() === 'claude-subscription') {
