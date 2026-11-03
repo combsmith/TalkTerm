@@ -2019,7 +2019,7 @@ describe('ClaudeSdkBackend', () => {
     let workspace: string;
 
     beforeEach(() => {
-      root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'talkterm-perm-')));
+      root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'talkterm-perm-')));
       workspace = path.join(root, 'workspace');
       fs.mkdirSync(workspace);
       fs.writeFileSync(path.join(workspace, 'notes.md'), 'inside');

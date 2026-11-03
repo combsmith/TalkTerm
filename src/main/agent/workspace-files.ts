@@ -47,11 +47,16 @@ function unbounded(value: string): boolean {
   return value === '' || value.includes('..') || value.startsWith('~');
 }
 
-/** Leading part of a glob pattern before its first wildcard segment. */
+/**
+ * Leading part of a glob pattern before its first wildcard segment, e.g. `docs` for
+ * `docs/*.md`, empty for `**` and the filesystem root for `/**`.
+ */
 function staticPrefix(pattern: string): string {
   const segments = pattern.split(/[\\/]/);
   const firstGlob = segments.findIndex((segment) => GLOB_CHARS.test(segment));
-  return (firstGlob === -1 ? segments : segments.slice(0, firstGlob)).join(path.sep) || path.sep;
+  const prefix = (firstGlob === -1 ? segments : segments.slice(0, firstGlob)).join(path.sep);
+  // Keep a bare root (`` or `C:`) absolute instead of letting it resolve against the cwd.
+  return path.isAbsolute(pattern) && !prefix.includes(path.sep) ? `${prefix}${path.sep}` : prefix;
 }
 
 /**
@@ -78,7 +83,8 @@ function readTargets(
   const pattern = input[toolName === 'Glob' ? 'pattern' : 'glob'];
   if (pattern === undefined) return [base];
   if (typeof pattern !== 'string' || unbounded(pattern)) return null;
-  return path.isAbsolute(pattern) ? [base, staticPrefix(pattern)] : [base];
+  // The prefix may name a symlinked directory, so it is checked as well as the base.
+  return [base, path.resolve(base, staticPrefix(pattern))];
 }
 
 /**

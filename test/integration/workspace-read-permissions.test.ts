@@ -181,7 +181,7 @@ describe('Workspace read permissions through the real SDK', () => {
   });
 
   beforeEach(() => {
-    root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'talkterm-read-perm-')));
+    root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'talkterm-read-perm-')));
     workspace = path.join(root, 'workspace');
     secret = path.join(root, 'secret.txt');
     fs.mkdirSync(workspace);
@@ -203,7 +203,8 @@ describe('Workspace read permissions through the real SDK', () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
-    fs.rmSync(root, { recursive: true, force: true });
+    // On Windows the SDK's CLI process can still hold the workspace for a moment after a turn.
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
   });
 
   /** Run one turn in which the model asks to read `target`; decline any prompt. */

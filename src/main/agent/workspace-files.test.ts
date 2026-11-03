@@ -16,7 +16,7 @@ let workspace: string;
 let outside: string;
 
 beforeEach(() => {
-  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'talkterm-ws-')));
+  root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'talkterm-ws-')));
   workspace = path.join(root, 'workspace');
   outside = path.join(root, 'outside');
   fs.mkdirSync(path.join(workspace, 'docs'), { recursive: true });
@@ -179,6 +179,9 @@ describe('isReadWithinWorkspace', () => {
       await expect(
         isReadWithinWorkspace('Glob', { pattern: '*.md', path: 'docs' }, workspace),
       ).resolves.toBe(true);
+      await expect(
+        isReadWithinWorkspace('Glob', { pattern: 'docs/**/*.md' }, workspace),
+      ).resolves.toBe(true);
     });
 
     it('allows an absolute pattern rooted inside the workspace', async () => {
@@ -209,6 +212,12 @@ describe('isReadWithinWorkspace', () => {
       await expect(
         isReadWithinWorkspace('Glob', { pattern: '*', path: 'escape-dir' }, workspace),
       ).resolves.toBe(false);
+      await expect(
+        isReadWithinWorkspace('Glob', { pattern: 'escape-dir/*' }, workspace),
+      ).resolves.toBe(false);
+      await expect(
+        isReadWithinWorkspace('Glob', { pattern: 'escape-dir/**/*.txt', path: '.' }, workspace),
+      ).resolves.toBe(false);
     });
 
     it('refuses malformed inputs', async () => {
@@ -237,6 +246,9 @@ describe('isReadWithinWorkspace', () => {
       ).resolves.toBe(false);
       await expect(
         isReadWithinWorkspace('Grep', { pattern: 'x', glob: `${outside}/*` }, workspace),
+      ).resolves.toBe(false);
+      await expect(
+        isReadWithinWorkspace('Grep', { pattern: 'x', glob: 'escape-dir/*.txt' }, workspace),
       ).resolves.toBe(false);
     });
   });
