@@ -47,11 +47,20 @@ export function detectContentType(text: string): ContentType {
   return 'text';
 }
 
+/**
+ * Largest table (rows x columns) shown as a comparison table. Short rows are padded to the
+ * header width when rendered, so a few lines of text could otherwise expand without bound.
+ */
+export const MAX_TABLE_CELLS = 2_000;
+
 const TABLE_ROW_LINE = /^\|.+\|$/;
 const CLUSTER_HEADER_LINE = /^\*\*[^*]+\*\*$/;
 const CLUSTER_ITEM_LINE = /^[-*][ \t]+\S/;
 
-/** Check whether every non-empty line in `text` is part of the markdown table and lossless. */
+/**
+ * Check whether every non-empty line in `text` is part of the markdown table, the table is
+ * lossless, and it is small enough to render as a comparison table.
+ */
 function isLosslessTable(text: string): boolean {
   const lines = text
     .split('\n')
@@ -62,7 +71,9 @@ function isLosslessTable(text: string): boolean {
   }
   const parsed = parseMarkdownTable(text);
   return (
-    parsed.headers.length >= 2 && parsed.rows.every((row) => row.length <= parsed.headers.length)
+    parsed.headers.length >= 2 &&
+    parsed.headers.length * parsed.rows.length <= MAX_TABLE_CELLS &&
+    parsed.rows.every((row) => row.length <= parsed.headers.length)
   );
 }
 
