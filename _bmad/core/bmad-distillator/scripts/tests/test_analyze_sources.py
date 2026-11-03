@@ -137,6 +137,34 @@ class TestIterGlob:
         assert len(result) == 3
         assert "matched 3+ paths" in capsys.readouterr().err
 
+    @pytest.mark.parametrize("pattern", [
+        "*/",
+        "**/",
+        "subdir/../*.md",
+        "*/../*.md",
+    ])
+    def test_matches_glob_for_trailing_separators_and_parent_segments(self, temp_dir, pattern):
+        import glob
+
+        full = str(Path(temp_dir) / pattern)
+        expected = {Path(p) for p in glob.glob(full, recursive=True)}
+        assert set(iter_glob(full)) == expected
+
+    def test_trailing_separator_excludes_files(self, temp_dir):
+        result = resolve_inputs([str(Path(temp_dir)) + "/*/"])
+        assert result == []
+
+    def test_skips_symlink_loops_instead_of_raising(self, temp_dir):
+        a = Path(temp_dir) / "loop-a"
+        b = Path(temp_dir) / "loop-b"
+        a.symlink_to(b)
+        b.symlink_to(a)
+        result = iter_glob(str(Path(temp_dir) / "*" / "*.md"))
+        assert Path(temp_dir) / "subdir" / "prd-v2.md" in result
+
+    def test_empty_pattern_matches_nothing(self):
+        assert iter_glob("") == []
+
     def test_returns_a_literal_path_only_if_it_exists(self, temp_dir):
         existing = str(Path(temp_dir) / "random.txt")
         assert iter_glob(existing) == [Path(existing)]

@@ -25,7 +25,7 @@ export default defineConfig({
     command: 'npx vite --config vite.renderer.config.ts --port 5173 --host 127.0.0.1',
     url: 'http://127.0.0.1:5173',
     // Locally, reuse a dev server already on the port; CI always starts its own.
-    reuseExistingServer: process.env['CI'] !== 'true',
+    reuseExistingServer: (process.env['CI'] ?? '') === '',
     timeout: 30000,
     stdout: 'pipe',
     stderr: 'pipe',
