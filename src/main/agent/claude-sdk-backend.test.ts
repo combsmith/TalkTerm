@@ -1,11 +1,16 @@
 /* eslint-disable @typescript-eslint/unbound-method -- vi.fn() mocks */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { AgentEvent } from '../../shared/types/domain/agent-event';
 import type { AuditRepository } from '../../shared/types/ports/audit-repository';
 import { ClaudeSdkBackend } from './claude-sdk-backend';
+import { readContextFile } from './workspace-files';
 
-vi.mock('node:fs/promises', () => ({
-  readFile: vi.fn().mockRejectedValue(new Error('ENOENT')),
+vi.mock('./workspace-files', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./workspace-files')>()),
+  readContextFile: vi.fn().mockRejectedValue(new Error('ENOENT')),
 }));
 
 function createMockAuditRepo(): AuditRepository {
@@ -67,12 +72,11 @@ function clearSdkMock(): void {
 }
 
 describe('ClaudeSdkBackend', () => {
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.restoreAllMocks();
     clearSdkMock();
-    // Reset fs mock to reject by default (no BMAD files)
-    const fsMock = await import('node:fs/promises');
-    vi.mocked(fsMock.readFile).mockRejectedValue(new Error('ENOENT'));
+    // Reset loader mock to reject by default (no BMAD files)
+    vi.mocked(readContextFile).mockRejectedValue(new Error('ENOENT'));
   });
 
   describe('startSession', () => {
@@ -1277,8 +1281,7 @@ describe('ClaudeSdkBackend', () => {
 
   describe('BMAD context loading', () => {
     it('includes BMAD agent definition in system prompt when files exist', async () => {
-      const fsMock = await import('node:fs/promises');
-      const readFileMock = vi.mocked(fsMock.readFile);
+      const readFileMock = vi.mocked(readContextFile);
       readFileMock.mockImplementation((filePath: unknown) => {
         const p = String(filePath);
         if (p.includes('analyst.md')) {
@@ -1321,8 +1324,7 @@ describe('ClaudeSdkBackend', () => {
     });
 
     it('falls back to generic prompt when no BMAD files exist', async () => {
-      const fsMock = await import('node:fs/promises');
-      vi.mocked(fsMock.readFile).mockRejectedValue(new Error('ENOENT'));
+      vi.mocked(readContextFile).mockRejectedValue(new Error('ENOENT'));
 
       const sdkMock = mockSdkModule([
         {
@@ -1353,8 +1355,7 @@ describe('ClaudeSdkBackend', () => {
     });
 
     it('falls back to process.cwd() when workspace has no BMAD files', async () => {
-      const fsMock = await import('node:fs/promises');
-      const readFileMock = vi.mocked(fsMock.readFile);
+      const readFileMock = vi.mocked(readContextFile);
       // Workspace has no BMAD, but app root (process.cwd()) does
       readFileMock.mockImplementation((filePath: unknown) => {
         const p = String(filePath).replaceAll('\\', '/');
@@ -1374,8 +1375,7 @@ describe('ClaudeSdkBackend', () => {
     });
 
     it('replaces {project-root} placeholder with resolved path', async () => {
-      const fsMock = await import('node:fs/promises');
-      vi.mocked(fsMock.readFile).mockImplementation((filePath: unknown) => {
+      vi.mocked(readContextFile).mockImplementation((filePath: unknown) => {
         const p = String(filePath);
         if (p.includes('analyst.md')) {
           return Promise.resolve('Load from {project-root}/_bmad/bmm/config.yaml');
@@ -1395,8 +1395,7 @@ describe('ClaudeSdkBackend', () => {
     });
 
     it('loads BMAD analyst definition from tracked bmad-agent-analyst/SKILL.md location when legacy analyst.md is absent', async () => {
-      const fsMock = await import('node:fs/promises');
-      vi.mocked(fsMock.readFile).mockImplementation((filePath: unknown) => {
+      vi.mocked(readContextFile).mockImplementation((filePath: unknown) => {
         const p = String(filePath);
         if (p.includes('bmad-agent-analyst') && p.endsWith('SKILL.md')) {
           return Promise.resolve('# Tracked Mary Analyst Skill');
@@ -1410,11 +1409,29 @@ describe('ClaudeSdkBackend', () => {
       expect(context).toContain('Tracked Mary Analyst Skill');
     });
 
+    it('reads every BMAD file, including the SKILL.md fallback, through the contained loader', async () => {
+      vi.mocked(readContextFile).mockClear();
+      vi.mocked(readContextFile).mockImplementation((filePath: unknown) =>
+        String(filePath).endsWith('SKILL.md')
+          ? Promise.resolve('# Skill')
+          : Promise.reject(new Error('ENOENT')),
+      );
+
+      const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
+      await backend.loadBmadContext('/my/workspace');
+
+      const bmm = path.join('/my/workspace', '_bmad', 'bmm');
+      expect(vi.mocked(readContextFile).mock.calls).toEqual([
+        [path.join(bmm, 'agents', 'analyst.md'), '/my/workspace'],
+        [path.join(bmm, 'config.yaml'), '/my/workspace'],
+        [path.join(bmm, '1-analysis', 'bmad-agent-analyst', 'SKILL.md'), '/my/workspace'],
+      ]);
+    });
+
     it('loads bundled BMAD assets from the injected resources root regardless of process.cwd()', async () => {
       const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/');
-      const fsMock = await import('node:fs/promises');
       const readPaths: string[] = [];
-      vi.mocked(fsMock.readFile).mockImplementation((filePath: unknown) => {
+      vi.mocked(readContextFile).mockImplementation((filePath: unknown) => {
         const p = String(filePath).replaceAll('\\', '/');
         readPaths.push(p);
         if (p.startsWith('/App/Resources') && p.endsWith('SKILL.md')) {
@@ -1614,7 +1631,8 @@ describe('ClaudeSdkBackend', () => {
         { options: { permissionMode: string; allowedTools?: string[]; canUseTool?: unknown } },
       ];
       expect(approvedCall[0].options.permissionMode).toBe('default');
-      expect(approvedCall[0].options.allowedTools).toEqual(['Read', 'Glob', 'Grep', 'LS']);
+      // Read-only tools are not pre-approved; canUseTool decides them against the workspace
+      expect(approvedCall[0].options.allowedTools).toBeUndefined();
       expect(typeof approvedCall[0].options.canUseTool).toBe('function');
     });
 
@@ -1984,6 +2002,132 @@ describe('ClaudeSdkBackend', () => {
       if (events[0]?.type === 'error') {
         expect(events[0].userMessage).toContain('exceeded the cost budget');
       }
+    });
+  });
+
+  describe('read-only tool permissions', () => {
+    type PermissionResult =
+      | { behavior: 'allow'; updatedInput: Record<string, unknown> }
+      | { behavior: 'deny'; message: string; interrupt?: boolean };
+    type CanUseToolFn = (
+      toolName: string,
+      input: Record<string, unknown>,
+      options: { signal: AbortSignal },
+    ) => Promise<PermissionResult>;
+
+    let root: string;
+    let workspace: string;
+
+    beforeEach(() => {
+      root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'talkterm-perm-')));
+      workspace = path.join(root, 'workspace');
+      fs.mkdirSync(workspace);
+      fs.writeFileSync(path.join(workspace, 'notes.md'), 'inside');
+      fs.writeFileSync(path.join(root, 'secret.txt'), 'outside');
+      fs.symlinkSync(path.join(root, 'secret.txt'), path.join(workspace, 'link.txt'));
+    });
+
+    afterEach(() => {
+      fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    /** Run one turn whose SDK asks canUseTool once; decline any prompt shown. */
+    async function decide(
+      toolName: string,
+      input: Record<string, unknown>,
+      workspacePath: string | null = workspace,
+    ): Promise<{ prompts: string[]; decision: PermissionResult | undefined; options: unknown }> {
+      let decision: PermissionResult | undefined;
+      let options: unknown;
+      const querySpy = vi
+        .fn()
+        .mockImplementation(
+          (params: { options: { canUseTool: CanUseToolFn; allowedTools?: string[] } }) => {
+            options = params.options;
+            async function* gen(): AsyncGenerator<Record<string, unknown>, void> {
+              decision = await params.options.canUseTool(toolName, input, {
+                signal: new AbortController().signal,
+              });
+              yield {
+                type: 'result',
+                subtype: 'success',
+                result: 'done',
+                total_cost_usd: 0,
+                num_turns: 1,
+                session_id: 'sdk-read',
+              };
+            }
+            const g = gen() as AsyncGenerator<Record<string, unknown>, void> & {
+              interrupt: () => Promise<void>;
+            };
+            g.interrupt = vi.fn().mockResolvedValue(undefined);
+            return g;
+          },
+        );
+      installSdkMock({ query: querySpy });
+      const backend = new ClaudeSdkBackend(createMockAuditRepo(), () => 'sk-ant-test-key');
+      const prompts: string[] = [];
+      for await (const event of backend.sendMessage(
+        'sess-read',
+        'look',
+        workspacePath ?? undefined,
+      )) {
+        if (event.type === 'confirm-request') {
+          prompts.push(event.description);
+          backend.respondToConfirmation(false);
+        }
+      }
+      return { prompts, decision, options };
+    }
+
+    it('does not pre-approve read-only tools', async () => {
+      const { options } = await decide('Read', { file_path: path.join(workspace, 'notes.md') });
+      expect((options as { allowedTools?: string[] }).allowedTools).toBeUndefined();
+    });
+
+    it('allows a read inside the workspace without prompting', async () => {
+      const input = { file_path: path.join(workspace, 'notes.md') };
+      const { prompts, decision } = await decide('Read', input);
+      expect(prompts).toEqual([]);
+      expect(decision).toEqual({ behavior: 'allow', updatedInput: input });
+    });
+
+    it('prompts for a read outside the workspace and denies it when declined', async () => {
+      const secret = path.join(root, 'secret.txt');
+      const { prompts, decision } = await decide('Read', { file_path: secret });
+      expect(prompts).toEqual([`Read: ${secret}`]);
+      expect(decision?.behavior).toBe('deny');
+    });
+
+    it('prompts for a workspace symlink that resolves outside the workspace', async () => {
+      const { prompts, decision } = await decide('Read', {
+        file_path: path.join(workspace, 'link.txt'),
+      });
+      expect(prompts).toHaveLength(1);
+      expect(decision?.behavior).toBe('deny');
+    });
+
+    it('allows Glob and Grep scoped to the workspace', async () => {
+      expect((await decide('Glob', { pattern: '**/*.md' })).prompts).toEqual([]);
+      expect((await decide('Grep', { pattern: 'x', path: workspace })).prompts).toEqual([]);
+    });
+
+    it('prompts for Glob and Grep that reach outside the workspace', async () => {
+      expect((await decide('Glob', { pattern: `${root}/**` })).prompts).toEqual([
+        `Glob: ${root}/**`,
+      ]);
+      expect((await decide('Grep', { pattern: 'x', path: root })).prompts).toEqual([
+        `Grep: ${root}`,
+      ]);
+    });
+
+    it('prompts for every read when the session has no workspace', async () => {
+      const { prompts } = await decide(
+        'Read',
+        { file_path: path.join(workspace, 'notes.md') },
+        null,
+      );
+      expect(prompts).toHaveLength(1);
     });
   });
 
