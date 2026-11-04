@@ -1,7 +1,7 @@
 import tseslint from 'typescript-eslint';
 import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
-import importX from 'eslint-plugin-import-x';
+import importPlugin from 'eslint-plugin-import';
 
 export default tseslint.config(
   {
@@ -31,7 +31,7 @@ export default tseslint.config(
     plugins: {
       react,
       'react-hooks': reactHooks,
-      'import-x': importX,
+      import: importPlugin,
     },
     settings: {
       react: {
@@ -61,7 +61,7 @@ export default tseslint.config(
       'react/react-in-jsx-scope': 'off',
 
       // Import ordering
-      'import-x/order': [
+      'import/order': [
         'error',
         {
           groups: ['builtin', 'external', 'internal', 'parent', 'sibling'],
@@ -69,7 +69,7 @@ export default tseslint.config(
           alphabetize: { order: 'asc' },
         },
       ],
-      'import-x/no-duplicates': 'error',
+      'import/no-duplicates': 'error',
     },
   },
 );
