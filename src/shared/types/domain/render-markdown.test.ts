@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   detectContentType,
   isDocumentContent,
+  MAX_TABLE_CELLS,
   parseMarkdownTable,
   parsePlanContent,
   parseClusteredContent,
@@ -55,6 +56,27 @@ describe('detectContentType', () => {
       'Run `npm run verify` after updating staging.',
     ].join('\n');
     expect(detectContentType(tableWithWarning)).toBe('document');
+  });
+
+  describe('table size cap', () => {
+    const table = (columns: number, rows: number): string => {
+      const header = `|${Array.from({ length: columns }, (_, i) => ` H${String(i)} `).join('|')}|`;
+      const separator = `|${Array.from({ length: columns }, () => '---').join('|')}|`;
+      // Each row has only the first cell; the rest would be filled in when rendered.
+      return [header, separator, ...Array.from({ length: rows }, () => '| x |')].join('\n');
+    };
+
+    it('renders a table of exactly MAX_TABLE_CELLS cells as a comparison table', () => {
+      expect(detectContentType(table(2, MAX_TABLE_CELLS / 2))).toBe('comparison-table');
+    });
+
+    it('falls back to the document view once rows x columns exceeds the cap', () => {
+      expect(detectContentType(table(2, MAX_TABLE_CELLS / 2 + 1))).toBe('document');
+    });
+
+    it('falls back for a wide header with short rows', () => {
+      expect(detectContentType(table(MAX_TABLE_CELLS / 2, 3))).toBe('document');
+    });
   });
 
   it('returns "plan" for numbered steps with checkboxes', () => {
