@@ -10,6 +10,8 @@ related documents (e.g., a brief paired with its discovery notes).
 
 Accepts: file paths, folder paths (scans recursively for .md/.txt/.yaml/.yml/.json),
 or glob patterns. Skips node_modules, .git, __pycache__, .venv, _bmad-output.
+Glob patterns do not follow directory symlinks under `**` and stop after
+MAX_GLOB_MATCHES paths.
 
 Output JSON structure:
   status: "ok" | "error"
@@ -27,7 +29,7 @@ Output JSON structure:
 from __future__ import annotations
 
 import argparse
-import glob
+import fnmatch
 import json
 import os
 import re
@@ -45,6 +47,11 @@ SKIP_DIRS = {
 
 # Approximate chars per token for estimation
 CHARS_PER_TOKEN = 4
+
+# Most paths a single glob pattern may match before the rest are dropped
+MAX_GLOB_MATCHES = 10_000
+
+GLOB_MAGIC = re.compile(r"[*?[]")
 
 # Thresholds
 SINGLE_COMPRESSOR_MAX_TOKENS = 15_000
@@ -79,6 +86,105 @@ GROUP_PATTERNS = [
 ]
 
 
+def _scandir(directory: Path) -> list[os.DirEntry]:
+    try:
+        with os.scandir(directory) as it:
+            return sorted(it, key=lambda e: e.name)
+    except OSError:
+        return []
+
+
+def _is_dir(path: Path | os.DirEntry, follow_symlinks: bool = True) -> bool:
+    """is_dir that treats unreadable entries and symlink loops as non-directories, as glob does."""
+    try:
+        if isinstance(path, Path):
+            return path.is_dir() if follow_symlinks else not path.is_symlink() and path.is_dir()
+        return path.is_dir(follow_symlinks=follow_symlinks)
+    except OSError:
+        return False
+
+
+def iter_glob(pattern: str, limit: int = MAX_GLOB_MATCHES) -> list[Path]:
+    """Expand a glob pattern like glob.glob(pattern, recursive=True), but iteratively,
+    without following directory symlinks under `**`, and returning at most `limit` paths.
+
+    As with glob, `*` and `?` stay within one path segment, `**` matches zero or more
+    directories, hidden names only match a segment that starts with a dot, and a
+    trailing separator matches directories only.
+    """
+    if not pattern:
+        return []
+    dirs_only = pattern.endswith(("/", os.sep))
+    parts = Path(pattern).parts
+    first_magic = next((i for i, p in enumerate(parts) if GLOB_MAGIC.search(p)), len(parts))
+    base = Path(*parts[:first_magic]) if first_magic else Path(".")
+    segments = parts[first_magic:]
+    if not segments:
+        try:
+            exists = base.exists()
+        except OSError:
+            exists = False
+        return [base] if exists and (not dirs_only or _is_dir(base)) else []
+    if not _is_dir(base):
+        return []
+
+    matches: list[Path] = []
+    seen: set[Path] = set()
+    visited: set[tuple[Path, int]] = set()
+    stack: list[tuple[Path, int]] = [(base, 0)]
+
+    def add(path: Path) -> bool:
+        if path not in seen:
+            seen.add(path)
+            matches.append(path)
+        return len(matches) >= limit
+
+    while stack:
+        current, index = stack.pop()
+        if (current, index) in visited:
+            continue
+        visited.add((current, index))
+        if index == len(segments):
+            if dirs_only and not _is_dir(current):
+                continue
+            if add(current):
+                break
+            continue
+        segment = segments[index]
+        last = index == len(segments) - 1
+        if segment == "**":
+            stack.append((current, index + 1))
+            for entry in reversed(_scandir(current)):
+                if entry.name.startswith("."):
+                    continue
+                if _is_dir(entry, follow_symlinks=False):
+                    stack.append((Path(entry.path), index))
+                elif last and not dirs_only and add(Path(entry.path)):
+                    stack.clear()
+                    break
+            continue
+        if segment in (".", ".."):
+            # scandir never lists these, so follow them directly as glob does.
+            target = current / segment
+            if last or _is_dir(target):
+                stack.append((target, index + 1))
+            continue
+        for entry in reversed(_scandir(current)):
+            if entry.name.startswith(".") and not segment.startswith("."):
+                continue
+            if not fnmatch.fnmatch(entry.name, segment):
+                continue
+            if last or _is_dir(entry):
+                stack.append((Path(entry.path), index + 1))
+
+    if len(matches) >= limit:
+        print(
+            f"warning: {pattern!r} matched {limit:,}+ paths; ignoring the rest",
+            file=sys.stderr,
+        )
+    return matches
+
+
 def resolve_inputs(inputs: list[str]) -> list[Path]:
     """Resolve input arguments to a flat list of file paths."""
     files: list[Path] = []
@@ -95,9 +201,7 @@ def resolve_inputs(inputs: list[str]) -> list[Path]:
                         files.append(fp.resolve())
         else:
             # Try as glob
-            matches = glob.glob(inp, recursive=True)
-            for m in sorted(matches):
-                mp = Path(m)
+            for mp in sorted(iter_glob(inp)):
                 if mp.is_file() and mp.suffix.lower() in INCLUDE_EXTENSIONS:
                     files.append(mp.resolve())
     # Deduplicate while preserving order
