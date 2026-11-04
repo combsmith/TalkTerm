@@ -13,6 +13,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from analyze_sources import (
+    iter_glob,
     resolve_inputs,
     detect_doc_type,
     suggest_groups,
@@ -92,6 +93,82 @@ class TestResolveInputs:
     def test_nonexistent_path(self):
         result = resolve_inputs(["/nonexistent/path/file.md"])
         assert len(result) == 0
+
+
+class TestIterGlob:
+    @pytest.mark.parametrize("pattern", [
+        "*.md",
+        "**/*.md",
+        "sub*/*.md",
+        "**",
+        "subdir/**/*.md",
+        "*/prd-?2.md",
+        "[pr]*.md",
+        "missing/**/*.md",
+    ])
+    def test_matches_glob_on_plain_trees(self, temp_dir, pattern):
+        import glob
+
+        full = str(Path(temp_dir) / pattern)
+        expected = {Path(p) for p in glob.glob(full, recursive=True)}
+        assert set(iter_glob(full)) == expected
+
+    def test_skips_hidden_names_unless_the_segment_starts_with_a_dot(self, temp_dir):
+        hidden = Path(temp_dir) / ".hidden"
+        hidden.mkdir()
+        (hidden / "secret.md").write_text("x")
+        assert hidden / "secret.md" not in iter_glob(str(Path(temp_dir) / "**" / "*.md"))
+        assert hidden / "secret.md" in iter_glob(str(Path(temp_dir) / ".hidden" / "*.md"))
+
+    def test_does_not_follow_directory_symlinks_under_double_star(self, temp_dir):
+        loop = Path(temp_dir) / "subdir" / "loop"
+        loop.symlink_to(Path(temp_dir), target_is_directory=True)
+        (Path(temp_dir) / "subdir" / "loop2").symlink_to(
+            Path(temp_dir), target_is_directory=True
+        )
+        result = iter_glob(str(Path(temp_dir) / "**" / "*.md"))
+        assert not any("loop" in p.parts for p in result)
+        assert Path(temp_dir) / "subdir" / "prd-v2.md" in result
+
+    def test_stops_at_the_limit(self, temp_dir, capsys):
+        for i in range(5):
+            (Path(temp_dir) / f"extra-{i}.md").write_text("x")
+        result = iter_glob(str(Path(temp_dir) / "*.md"), limit=3)
+        assert len(result) == 3
+        assert "matched 3+ paths" in capsys.readouterr().err
+
+    @pytest.mark.parametrize("pattern", [
+        "*/",
+        "**/",
+        "subdir/../*.md",
+        "*/../*.md",
+    ])
+    def test_matches_glob_for_trailing_separators_and_parent_segments(self, temp_dir, pattern):
+        import glob
+
+        full = str(Path(temp_dir) / pattern)
+        expected = {Path(p) for p in glob.glob(full, recursive=True)}
+        assert set(iter_glob(full)) == expected
+
+    def test_trailing_separator_excludes_files(self, temp_dir):
+        result = resolve_inputs([str(Path(temp_dir)) + "/*/"])
+        assert result == []
+
+    def test_skips_symlink_loops_instead_of_raising(self, temp_dir):
+        a = Path(temp_dir) / "loop-a"
+        b = Path(temp_dir) / "loop-b"
+        a.symlink_to(b)
+        b.symlink_to(a)
+        result = iter_glob(str(Path(temp_dir) / "*" / "*.md"))
+        assert Path(temp_dir) / "subdir" / "prd-v2.md" in result
+
+    def test_empty_pattern_matches_nothing(self):
+        assert iter_glob("") == []
+
+    def test_returns_a_literal_path_only_if_it_exists(self, temp_dir):
+        existing = str(Path(temp_dir) / "random.txt")
+        assert iter_glob(existing) == [Path(existing)]
+        assert iter_glob(str(Path(temp_dir) / "nope.txt")) == []
 
 
 class TestDetectDocType:
