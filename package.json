@@ -63,7 +63,7 @@
     "autoprefixer": "^10.4.20",
     "electron": "^43.8.3",
     "eslint": "^9.16.0",
-    "eslint-plugin-import-x": "^4.5.0",
+    "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-react": "^7.37.0",
     "eslint-plugin-react-hooks": "^5.1.0",
     "husky": "^9.1.0",
@@ -84,7 +84,9 @@
     "@vitest/mocker": "^4.1.12",
     "tinypool": "^2.2.0",
     "postcss-selector-parser": "^7.1.7",
-    "postcss-nested": "^9.0.1"
+    "postcss-nested": "^9.0.1",
+    "minimatch@>=7.0.0 <11.0.1": "^11.0.1",
+    "glob@>=9.0.0 <14.0.2": "^14.0.2"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.83",
