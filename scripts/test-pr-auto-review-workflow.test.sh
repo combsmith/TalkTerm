@@ -90,7 +90,7 @@ write_footer_with_if() {
     echo "jobs:"
     echo "  pr-auto-review:"
     if [[ -n "$cond" ]]; then
-      echo "    if: $cond"
+      printf '    if: %s\n' "$cond"
     fi
     echo "    runs-on: ubuntu-latest"
     echo "    steps:"
