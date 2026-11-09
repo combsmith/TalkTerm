@@ -73,17 +73,29 @@ permissions: {}
 YAML
 }
 
-# Append the common workflow footer (job definition) to a fixture file.
+# Append the common workflow footer (job definition) to a fixture file. The job
+# carries the Dependabot-actor skip guard (#466) that the guard's Check 8 requires.
 write_footer() {
   local file="$1"
   # Append fixture footer with standard job definition.
-  cat >> "$file" <<'YAML'
-jobs:
-  pr-auto-review:
-    runs-on: ubuntu-latest
-    steps:
-      - run: 'true'
-YAML
+  write_footer_with_if "$file" "\${{ github.actor != 'dependabot[bot]' }}"
+}
+
+# Append a workflow footer whose pr-auto-review job uses the given `if:` value.
+# An empty value omits the `if:` key entirely.
+write_footer_with_if() {
+  local file="$1" cond="$2"
+  # Emit the job header, an optional if: line, then the minimal job body.
+  {
+    echo "jobs:"
+    echo "  pr-auto-review:"
+    if [[ -n "$cond" ]]; then
+      echo "    if: $cond"
+    fi
+    echo "    runs-on: ubuntu-latest"
+    echo "    steps:"
+    echo "      - run: 'true'"
+  } >> "$file"
 }
 
 # The correct, commit-scoped concurrency block: check_suite / workflow_run groups
@@ -525,6 +537,41 @@ mutant_rejected "an escaped {{0}} placeholder in the run_id fallback" \
   "s/unique-{0}'/unique-{{0}}'/"
 mutant_rejected "a cancel-in-progress expression without the \${{ }} wrapper" \
   "s/cancel-in-progress: \${{ \(.*\) }}\$/cancel-in-progress: \1/"
+mutant_rejected "the checked-in caller job with its Dependabot guard removed" \
+  "/^    if: .*dependabot\[bot\]/d"
+mutant_rejected "the checked-in caller job with its Dependabot guard inverted" \
+  "s/github.actor != 'dependabot\[bot\]'/github.actor == 'dependabot[bot]'/"
+
+# ── Case 10: the Dependabot-actor skip guard on the caller job (#466) ──────
+# Dependabot-triggered runs receive no Actions secrets, so the reusable's
+# checkout fails with "Input required and not supplied: token". The caller job
+# must skip for the dependabot[bot] actor.
+dependabot_case() {
+  local expect="$1" desc="$2" cond="$3" file
+  file="${TMP}/par-dependabot-$((++dep_n)).yml"
+  write_header "$file"
+  append_good_concurrency "$file"
+  write_footer_with_if "$file" "$cond"
+  if run_guard "$file"; then
+    if [[ "$expect" == accept ]]; then pass "$desc is accepted"; else fail "$desc should be REJECTED"; fi
+  else
+    if [[ "$expect" == reject ]]; then pass "$desc is rejected"; else fail "$desc should be ACCEPTED"; fi
+  fi
+}
+dep_n=0
+dependabot_case accept "a wrapped Dependabot-actor guard" \
+  "\${{ github.actor != 'dependabot[bot]' }}"
+dependabot_case accept "an unwrapped Dependabot-actor guard" \
+  "github.actor != 'dependabot[bot]'"
+dependabot_case reject "a caller job with no if: guard" ""
+dependabot_case reject "an inverted (==) Dependabot-actor guard" \
+  "\${{ github.actor == 'dependabot[bot]' }}"
+dependabot_case reject "a guard on the wrong actor" \
+  "\${{ github.actor != 'renovate[bot]' }}"
+dependabot_case reject "a guard on triggering_actor instead of actor" \
+  "\${{ github.triggering_actor != 'dependabot[bot]' }}"
+dependabot_case reject "a Dependabot guard OR'd with an always-true clause" \
+  "\${{ github.actor != 'dependabot[bot]' || true }}"
 
 echo ""
 if [[ "$fails" -eq 0 ]]; then

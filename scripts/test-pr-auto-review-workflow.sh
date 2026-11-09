@@ -21,6 +21,10 @@
 #   It also asserts cancel-in-progress stays gated on the check_suite / workflow_run
 #   events (never unconditional), so pull_request-head runs are never cancelled.
 #
+#   Finally it asserts the caller job skips for the dependabot[bot] actor (#466):
+#   Dependabot runs get no Actions secrets, so the reusable would otherwise fail
+#   with "Input required and not supplied: token".
+#
 # Accepts an optional workflow path (default: .github/workflows/pr-auto-review.yml)
 # so the checks can be exercised against fixtures — see
 # test-pr-auto-review-workflow.test.sh.
@@ -243,6 +247,39 @@ else
     echo "      Use an expression such as:"
     echo "        \${{ github.event_name == 'check_suite' || github.event_name == 'workflow_run' }}"
     echo "      so pull_request-head runs are never cancelled."
+  } >&2
+  PASS=false
+fi
+
+# ── Check 8: the caller job skips for the Dependabot actor (#466) ─────────
+# Dependabot-triggered runs receive no Actions secrets, so GH_PAT_WORKFLOWS is
+# empty and the reusable's checkout fails with "Input required and not supplied:
+# token". The pr-auto-review caller job must therefore carry exactly the guard
+# `github.actor != 'dependabot[bot]'` (optionally ${{ }}-wrapped / parenthesized)
+# so those runs are reported as skipped instead of failed.
+job_if=""
+if ! job_if=$(yq '.jobs.pr-auto-review.if // ""' "$WORKFLOW" 2>/dev/null); then
+  echo "FAIL: yq failed to parse $WORKFLOW. Please check if it is valid YAML."
+  exit 1
+fi
+if_norm="${job_if//[[:space:]]/}"
+if [[ "$if_norm" == '${{'*'}}' ]]; then
+  if_norm="${if_norm#\$\{\{}"
+  if_norm="${if_norm%\}\}}"
+fi
+while [[ "$if_norm" == \(*\) ]]; do
+  if_norm="${if_norm#\(}"
+  if_norm="${if_norm%\)}"
+done
+if [[ "$if_norm" == "github.actor!='dependabot[bot]'" ]]; then
+  echo "PASS: pr-auto-review job skips for the dependabot[bot] actor in $WORKFLOW"
+else
+  {
+    echo "FAIL: 'jobs.pr-auto-review.if' (found: '$job_if') does not skip the"
+    echo "      dependabot[bot] actor in $WORKFLOW"
+    echo "      Dependabot runs get no Actions secrets, so the reusable fails with"
+    echo "      'Input required and not supplied: token'. Use:"
+    echo "        if: \${{ github.actor != 'dependabot[bot]' }}"
   } >&2
   PASS=false
 fi
