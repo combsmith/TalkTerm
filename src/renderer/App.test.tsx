@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { App } from './App';
@@ -131,7 +131,11 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: /retry/i }));
     expect(mockRetryAdminCheck).toHaveBeenCalledOnce();
     expect(await screen.findByText(/Hey RetryAlice/i)).toBeInTheDocument();
-    expect(window.electronAPI.getIncompleteSessions).toHaveBeenCalledWith('/saved/workspace');
+    // getIncompleteSessions fires from a passive effect after the greeting commits; wait for it
+    // rather than asserting synchronously (flaky on loaded CI runners — see #581).
+    await waitFor(() => {
+      expect(window.electronAPI.getIncompleteSessions).toHaveBeenCalledWith('/saved/workspace');
+    });
   });
 
   it('quit button calls quitApp', async () => {
@@ -297,7 +301,11 @@ describe('App', () => {
     passAdminCheck();
 
     expect(await screen.findByText(/Hey ReturningAlice/i)).toBeInTheDocument();
-    expect(window.electronAPI.getIncompleteSessions).toHaveBeenCalledWith('/saved/workspace');
+    // getIncompleteSessions fires from a passive effect after the greeting commits; wait for it
+    // rather than asserting synchronously (flaky on loaded CI runners — see #581).
+    await waitFor(() => {
+      expect(window.electronAPI.getIncompleteSessions).toHaveBeenCalledWith('/saved/workspace');
+    });
   });
 
   it('returns directly to the active conversation after replacing an expired API key', async () => {
