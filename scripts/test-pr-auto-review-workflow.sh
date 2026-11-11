@@ -272,7 +272,6 @@ while [[ "$if_norm" == \(*\) ]]; do
   if_norm="${if_norm%\)}"
 done
 if [[ "$if_norm" == "github.actor!='dependabot[bot]'" ]] || \
-     [[ "$if_norm" == 'github.actor!="dependabot[bot]"' ]] || \
      [[ "$if_norm" == "github.actor!=dependabot[bot]" ]]; then
   echo "PASS: pr-auto-review job skips for the dependabot[bot] actor in $WORKFLOW"
 else
