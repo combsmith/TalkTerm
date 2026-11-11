@@ -541,8 +541,8 @@ mutant_rejected "the checked-in caller job with its Dependabot guard removed" \
   "/^    if: .*dependabot\[bot\]/d"
 mutant_rejected "the checked-in caller job with its Dependabot guard inverted (single quotes)" \
   "s/github.actor != 'dependabot\[bot\]'/github.actor == 'dependabot[bot]'/"
-mutant_rejected "the checked-in caller job with the event-aware guard inverted (double negation)" \
-  "s/github.event_name != 'pull_request' || github.actor != 'dependabot\[bot\]'/github.event_name == 'pull_request' \\&\\& github.actor == 'dependabot[bot]'/"
+mutant_rejected "the checked-in caller job with fork repo check inverted" \
+  "s/github.event.pull_request.head.repo.id == github.event.pull_request.base.repo.id/github.event.pull_request.head.repo.id != github.event.pull_request.base.repo.id/"
 
 # ── Case 10: the Dependabot-actor skip guard on the caller job (#466) ──────
 # Dependabot-triggered runs receive no Actions secrets, so the reusable's
@@ -590,6 +590,12 @@ dependabot_case reject "a guard on triggering_actor instead of actor" \
   "\${{ github.triggering_actor != 'dependabot[bot]' }}"
 dependabot_case reject "a Dependabot guard OR'd with an always-true clause" \
   "\${{ github.actor != 'dependabot[bot]' || true }}"
+
+# ── Case 11: fork-aware guard accepting both Dependabot and fork PRs ────────
+dependabot_case accept "a fork-aware guard skipping Dependabot and fork PRs (wrapped)" \
+  "\${{ github.event_name != 'pull_request' || (github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.id == github.event.pull_request.base.repo.id) }}"
+dependabot_case accept "a fork-aware guard skipping Dependabot and fork PRs (unwrapped)" \
+  "github.event_name != 'pull_request' || (github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.id == github.event.pull_request.base.repo.id)"
 
 echo ""
 if [[ "$fails" -eq 0 ]]; then
