@@ -251,12 +251,17 @@ else
   PASS=false
 fi
 
-# ── Check 8: the caller job skips for the Dependabot actor (#466) ─────────
-# Dependabot-triggered runs receive no Actions secrets, so GH_PAT_WORKFLOWS is
-# empty and the reusable's checkout fails with "Input required and not supplied:
-# token". The pr-auto-review caller job must therefore carry exactly the guard
-# `github.actor != 'dependabot[bot]'` (optionally ${{ }}-wrapped / parenthesized)
-# so those runs are reported as skipped instead of failed.
+# ── Check 8: the caller job skips for Dependabot pull_request runs (#466) ──
+# Dependabot-triggered pull_request runs receive no Actions secrets, so
+# GH_PAT_WORKFLOWS is empty and the reusable's checkout fails with "Input
+# required and not supplied: token". The pr-auto-review caller job must
+# therefore carry a guard that skips only pull_request events from the
+# dependabot[bot] actor, while preserving workflow_run / check_suite events
+# (which have a different context). The guard must be exactly one of:
+#   • github.actor != 'dependabot[bot]' (for backwards compat / all events)
+#   • github.event_name != 'pull_request' || github.actor != 'dependabot[bot]' (recommended, event-aware)
+# Both forms are optional ${{ }}-wrapped / parenthesized. Runs are reported as
+# skipped instead of failed.
 job_if=""
 if ! job_if=$(yq '.jobs.pr-auto-review.if // ""' "$WORKFLOW" 2>/dev/null); then
   echo "FAIL: yq failed to parse $WORKFLOW. Please check if it is valid YAML."
@@ -271,15 +276,20 @@ while [[ "$if_norm" == \(*\) ]]; do
   if_norm="${if_norm#\(}"
   if_norm="${if_norm%\)}"
 done
+# Accept the event-aware form (preferred) or the simple form (backwards compat).
 if [[ "$if_norm" == "github.actor!='dependabot[bot]'" ]] || \
-     [[ "$if_norm" == "github.actor!=dependabot[bot]" ]]; then
+     [[ "$if_norm" == "github.actor!=dependabot[bot]" ]] || \
+     [[ "$if_norm" == "github.event_name!='pull_request'||github.actor!='dependabot[bot]'" ]] || \
+     [[ "$if_norm" == "github.event_name!='pull_request'||github.actor!=dependabot[bot]" ]]; then
   echo "PASS: pr-auto-review job skips for the dependabot[bot] actor in $WORKFLOW"
 else
   {
     echo "FAIL: 'jobs.pr-auto-review.if' (found: '$job_if') does not skip the"
-    echo "      dependabot[bot] actor in $WORKFLOW"
-    echo "      Dependabot runs get no Actions secrets, so the reusable fails with"
-    echo "      'Input required and not supplied: token'. Use:"
+    echo "      dependabot[bot] actor appropriately in $WORKFLOW"
+    echo "      Dependabot pull_request runs get no Actions secrets, so the"
+    echo "      reusable fails with 'Input required and not supplied: token'."
+    echo "      Use one of:"
+    echo "        if: \${{ github.event_name != 'pull_request' || github.actor != 'dependabot[bot]' }}"
     echo "        if: \${{ github.actor != 'dependabot[bot]' }}"
   } >&2
   PASS=false

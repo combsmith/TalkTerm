@@ -541,6 +541,8 @@ mutant_rejected "the checked-in caller job with its Dependabot guard removed" \
   "/^    if: .*dependabot\[bot\]/d"
 mutant_rejected "the checked-in caller job with its Dependabot guard inverted (single quotes)" \
   "s/github.actor != 'dependabot\[bot\]'/github.actor == 'dependabot[bot]'/"
+mutant_rejected "the checked-in caller job with the event-aware guard inverted (double negation)" \
+  "s/github.event_name != 'pull_request' || github.actor != 'dependabot\[bot\]'/github.event_name == 'pull_request' \\&\\& github.actor == 'dependabot[bot]'/"
 
 # ── Case 10: the Dependabot-actor skip guard on the caller job (#466) ──────
 # Dependabot-triggered runs receive no Actions secrets, so the reusable's
@@ -559,14 +561,20 @@ dependabot_case() {
   fi
 }
 dep_n=0
-dependabot_case accept "a wrapped Dependabot-actor guard" \
+dependabot_case accept "a wrapped event-aware Dependabot-actor guard (preferred)" \
+  "\${{ github.event_name != 'pull_request' || github.actor != 'dependabot[bot]' }}"
+dependabot_case accept "an unwrapped event-aware Dependabot-actor guard (preferred)" \
+  "github.event_name != 'pull_request' || github.actor != 'dependabot[bot]'"
+dependabot_case accept "a wrapped Dependabot-actor guard (backwards compat)" \
   "\${{ github.actor != 'dependabot[bot]' }}"
-dependabot_case accept "an unwrapped Dependabot-actor guard" \
+dependabot_case accept "an unwrapped Dependabot-actor guard (backwards compat)" \
   "github.actor != 'dependabot[bot]'"
 dependabot_case reject "a wrapped guard with double quotes (invalid in Actions expressions)" \
   "\${{ github.actor != \"dependabot[bot]\" }}"
 dependabot_case reject "an unwrapped guard with double quotes (invalid in Actions expressions)" \
   "github.actor != \"dependabot[bot]\""
+dependabot_case reject "an event-aware guard with double quotes (invalid in Actions expressions)" \
+  "\${{ github.event_name != \"pull_request\" || github.actor != \"dependabot[bot]\" }}"
 dependabot_case reject "a caller job with no if: guard" ""
 dependabot_case reject "an inverted (==) Dependabot-actor guard" \
   "\${{ github.actor == 'dependabot[bot]' }}"
