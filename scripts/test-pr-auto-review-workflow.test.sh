@@ -539,8 +539,10 @@ mutant_rejected "a cancel-in-progress expression without the \${{ }} wrapper" \
   "s/cancel-in-progress: \${{ \(.*\) }}\$/cancel-in-progress: \1/"
 mutant_rejected "the checked-in caller job with its Dependabot guard removed" \
   "/^    if: .*dependabot\[bot\]/d"
-mutant_rejected "the checked-in caller job with its Dependabot guard inverted" \
+mutant_rejected "the checked-in caller job with its Dependabot guard inverted (single quotes)" \
   "s/github.actor != 'dependabot\[bot\]'/github.actor == 'dependabot[bot]'/"
+mutant_rejected "the checked-in caller job with its Dependabot guard inverted (double quotes)" \
+  "s/github.actor != \"dependabot\[bot\]\"/github.actor == \"dependabot[bot]\"/"
 
 # ── Case 10: the Dependabot-actor skip guard on the caller job (#466) ──────
 # Dependabot-triggered runs receive no Actions secrets, so the reusable's
@@ -563,6 +565,10 @@ dependabot_case accept "a wrapped Dependabot-actor guard" \
   "\${{ github.actor != 'dependabot[bot]' }}"
 dependabot_case accept "an unwrapped Dependabot-actor guard" \
   "github.actor != 'dependabot[bot]'"
+dependabot_case accept "a wrapped guard with double quotes" \
+  "\${{ github.actor != \"dependabot[bot]\" }}"
+dependabot_case accept "an unwrapped guard with double quotes" \
+  "github.actor != \"dependabot[bot]\""
 dependabot_case reject "a caller job with no if: guard" ""
 dependabot_case reject "an inverted (==) Dependabot-actor guard" \
   "\${{ github.actor == 'dependabot[bot]' }}"
