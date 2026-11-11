@@ -267,7 +267,19 @@ if ! job_if=$(yq '.jobs.pr-auto-review.if // ""' "$WORKFLOW" 2>/dev/null); then
   echo "FAIL: yq failed to parse $WORKFLOW. Please check if it is valid YAML."
   exit 1
 fi
-if_norm="${job_if//[[:space:]]/}"
+# Strip whitespace only OUTSIDE single-quoted literals: a space inside a literal
+# (e.g. 'dependabot [bot]') changes the compared string and must stay visible.
+if_norm=""
+in_quote=false
+for (( i = 0; i < ${#job_if}; i++ )); do
+  ch="${job_if:i:1}"
+  if [[ "$ch" == "'" ]]; then
+    if [[ "$in_quote" == true ]]; then in_quote=false; else in_quote=true; fi
+  elif [[ "$in_quote" == false && "$ch" == [[:space:]] ]]; then
+    continue
+  fi
+  if_norm+="$ch"
+done
 if [[ "$if_norm" == '${{'*'}}' ]]; then
   if_norm="${if_norm#\$\{\{}"
   if_norm="${if_norm%\}\}}"
@@ -278,9 +290,7 @@ while [[ "$if_norm" == \(*\) ]]; do
 done
 # Accept the event-aware form (preferred) or the simple form (backwards compat).
 if [[ "$if_norm" == "github.actor!='dependabot[bot]'" ]] || \
-     [[ "$if_norm" == "github.actor!=dependabot[bot]" ]] || \
-     [[ "$if_norm" == "github.event_name!='pull_request'||github.actor!='dependabot[bot]'" ]] || \
-     [[ "$if_norm" == "github.event_name!='pull_request'||github.actor!=dependabot[bot]" ]]; then
+     [[ "$if_norm" == "github.event_name!='pull_request'||github.actor!='dependabot[bot]'" ]]; then
   echo "PASS: pr-auto-review job skips for the dependabot[bot] actor in $WORKFLOW"
 else
   {

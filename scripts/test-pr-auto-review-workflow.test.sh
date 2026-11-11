@@ -575,6 +575,12 @@ dependabot_case reject "an unwrapped guard with double quotes (invalid in Action
   "github.actor != \"dependabot[bot]\""
 dependabot_case reject "an event-aware guard with double quotes (invalid in Actions expressions)" \
   "\${{ github.event_name != \"pull_request\" || github.actor != \"dependabot[bot]\" }}"
+dependabot_case reject "an unquoted Dependabot actor" \
+  "\${{ github.actor != dependabot[bot] }}"
+dependabot_case reject "an event-aware guard with an unquoted Dependabot actor" \
+  "\${{ github.event_name != 'pull_request' || github.actor != dependabot[bot] }}"
+dependabot_case reject "a Dependabot literal with an embedded space" \
+  "\${{ github.actor != 'dependabot [bot]' }}"
 dependabot_case reject "a caller job with no if: guard" ""
 dependabot_case reject "an inverted (==) Dependabot-actor guard" \
   "\${{ github.actor == 'dependabot[bot]' }}"
