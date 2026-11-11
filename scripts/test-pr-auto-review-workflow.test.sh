@@ -541,8 +541,23 @@ mutant_rejected "the checked-in caller job with its Dependabot guard removed" \
   "/^    if: .*dependabot\[bot\]/d"
 mutant_rejected "the checked-in caller job with its Dependabot guard inverted (single quotes)" \
   "s/github.actor != 'dependabot\[bot\]'/github.actor == 'dependabot[bot]'/"
-mutant_rejected "the checked-in caller job with its Dependabot guard inverted (double quotes)" \
-  "s/github.actor != \"dependabot\[bot\]\"/github.actor == \"dependabot[bot]\"/"
+
+# Test the double-quote inversion on a fixture that uses double quotes.
+dq_mutant="${TMP}/par-double-quotes-mutant.yml"
+write_header "$dq_mutant"
+append_good_concurrency "$dq_mutant"
+write_footer_with_if "$dq_mutant" "\${{ github.actor != \"dependabot[bot]\" }}"
+if ! cmp -s "$dq_mutant" <(sed 's/github.actor != "dependabot\[bot\]"/github.actor == "dependabot[bot]"/' "$dq_mutant"); then
+  dq_mutant_inv="${TMP}/par-double-quotes-mutant-inverted.yml"
+  sed 's/github.actor != "dependabot\[bot\]"/github.actor == "dependabot[bot]"/' "$dq_mutant" > "$dq_mutant_inv"
+  if run_guard "$dq_mutant_inv"; then
+    fail "the checked-in caller job with its Dependabot guard inverted (double quotes) should be REJECTED"
+  else
+    pass "the checked-in caller job with its Dependabot guard inverted (double quotes) is rejected"
+  fi
+else
+  fail "mutation did not apply: the checked-in caller job with its Dependabot guard inverted (double quotes)"
+fi
 
 # ── Case 10: the Dependabot-actor skip guard on the caller job (#466) ──────
 # Dependabot-triggered runs receive no Actions secrets, so the reusable's
