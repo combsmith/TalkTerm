@@ -261,6 +261,7 @@ fi
 #   • github.actor != 'dependabot[bot]' (for backwards compat / all events)
 #   • github.event_name != 'pull_request' || github.actor != 'dependabot[bot]' (event-aware, Dependabot only)
 #   • github.event_name != 'pull_request' || (github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.id == github.event.pull_request.base.repo.id) (event-aware, Dependabot + forks)
+#   • github.event_name != 'pull_request' && github.event_name != 'pull_request_review' || github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.id == github.event.pull_request.base.repo.id (review-aware, Dependabot + forks, also covers pull_request_review)
 # All forms are optional ${{ }}-wrapped / parenthesized. Runs are reported as
 # skipped instead of failed.
 job_if=""
@@ -302,6 +303,7 @@ else
     echo "      Dependabot and fork pull_request runs get no Actions secrets, so the"
     echo "      reusable fails with 'Input required and not supplied: token'."
     echo "      Use one of:"
+    echo "        if: \${{ github.event_name != 'pull_request' && github.event_name != 'pull_request_review' || github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.id == github.event.pull_request.base.repo.id }}"
     echo "        if: \${{ github.event_name != 'pull_request' || (github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.id == github.event.pull_request.base.repo.id) }}"
     echo "        if: \${{ github.event_name != 'pull_request' || github.actor != 'dependabot[bot]' }}"
     echo "        if: \${{ github.actor != 'dependabot[bot]' }}"
