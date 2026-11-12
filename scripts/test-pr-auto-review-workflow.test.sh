@@ -543,6 +543,8 @@ mutant_rejected "the checked-in caller job with its Dependabot guard inverted (s
   "s/github.actor != 'dependabot\[bot\]'/github.actor == 'dependabot[bot]'/"
 mutant_rejected "the checked-in caller job with fork repo check inverted" \
   "s/github.event.pull_request.head.repo.id == github.event.pull_request.base.repo.id/github.event.pull_request.head.repo.id != github.event.pull_request.base.repo.id/"
+mutant_rejected "the checked-in caller job with pull_request_review check removed (fork PR reviews would run without secrets)" \
+  "s/&& github.event_name != 'pull_request_review'//g"
 
 # ── Case 10: the Dependabot-actor skip guard on the caller job (#466) ──────
 # Dependabot-triggered runs receive no Actions secrets, so the reusable's
@@ -596,6 +598,12 @@ dependabot_case accept "a fork-aware guard skipping Dependabot and fork PRs (wra
   "\${{ github.event_name != 'pull_request' || (github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.id == github.event.pull_request.base.repo.id) }}"
 dependabot_case accept "a fork-aware guard skipping Dependabot and fork PRs (unwrapped)" \
   "github.event_name != 'pull_request' || (github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.id == github.event.pull_request.base.repo.id)"
+
+# ── Case 12: fork-aware guard also covering pull_request_review events ────
+dependabot_case accept "a fork-aware guard skipping Dependabot and fork PRs including pull_request_review (wrapped)" \
+  "\${{ github.event_name != 'pull_request' && github.event_name != 'pull_request_review' || github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.id == github.event.pull_request.base.repo.id }}"
+dependabot_case accept "a fork-aware guard skipping Dependabot and fork PRs including pull_request_review (unwrapped)" \
+  "github.event_name != 'pull_request' && github.event_name != 'pull_request_review' || github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.id == github.event.pull_request.base.repo.id"
 
 echo ""
 if [[ "$fails" -eq 0 ]]; then

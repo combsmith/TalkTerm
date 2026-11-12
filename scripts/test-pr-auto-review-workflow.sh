@@ -292,7 +292,8 @@ done
 # Accept the event-aware forms (preferred) or the simple form (backwards compat).
 if [[ "$if_norm" == "github.actor!='dependabot[bot]'" ]] || \
      [[ "$if_norm" == "github.event_name!='pull_request'||github.actor!='dependabot[bot]'" ]] || \
-     [[ "$if_norm" == "github.event_name!='pull_request'||(github.actor!='dependabot[bot]'&&github.event.pull_request.head.repo.id==github.event.pull_request.base.repo.id)" ]]; then
+     [[ "$if_norm" == "github.event_name!='pull_request'||(github.actor!='dependabot[bot]'&&github.event.pull_request.head.repo.id==github.event.pull_request.base.repo.id)" ]] || \
+     [[ "$if_norm" == "github.event_name!='pull_request'&&github.event_name!='pull_request_review'||github.actor!='dependabot[bot]'&&github.event.pull_request.head.repo.id==github.event.pull_request.base.repo.id" ]]; then
   echo "PASS: pr-auto-review job skips for the dependabot[bot] actor and fork PRs in $WORKFLOW"
 else
   {
