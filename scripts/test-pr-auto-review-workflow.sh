@@ -269,29 +269,18 @@ if ! job_if=$(yq '.jobs.pr-auto-review.if // ""' "$WORKFLOW" 2>/dev/null); then
   echo "FAIL: yq failed to parse $WORKFLOW. Please check if it is valid YAML."
   exit 1
 fi
-# Strip whitespace only OUTSIDE quoted literals (single or double quotes):
-# a space inside a literal (e.g. 'dependabot [bot]' or "dependabot [bot]")
-# changes the compared string and must stay visible. Normalize all quotes to
-# single quotes so validation patterns match both styles.
+# Strip whitespace only OUTSIDE single-quoted literals: a space inside a literal
+# (e.g. 'dependabot [bot]') changes the compared string and must stay visible.
 if_norm=""
-in_quote=""
+in_quote=false
 for (( i = 0; i < ${#job_if}; i++ )); do
   ch="${job_if:i:1}"
-  if [[ "$ch" == "'" || "$ch" == '"' ]]; then
-    if [[ "$in_quote" == "$ch" ]]; then
-      in_quote=""
-      if_norm+="'"
-    elif [[ -z "$in_quote" ]]; then
-      in_quote="$ch"
-      if_norm+="'"
-    else
-      if_norm+="$ch"
-    fi
-  elif [[ -z "$in_quote" && "$ch" == [[:space:]] ]]; then
+  if [[ "$ch" == "'" ]]; then
+    if [[ "$in_quote" == true ]]; then in_quote=false; else in_quote=true; fi
+  elif [[ "$in_quote" == false && "$ch" == [[:space:]] ]]; then
     continue
-  else
-    if_norm+="$ch"
   fi
+  if_norm+="$ch"
 done
 if [[ "$if_norm" == '${{'*'}}' ]]; then
   if_norm="${if_norm#\$\{\{}"
