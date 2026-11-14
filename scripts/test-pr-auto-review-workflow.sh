@@ -21,6 +21,10 @@
 #   It also asserts cancel-in-progress stays gated on the check_suite / workflow_run
 #   events (never unconditional), so pull_request-head runs are never cancelled.
 #
+#   Finally it asserts the caller job skips for the dependabot[bot] actor (#466):
+#   Dependabot runs get no Actions secrets, so the reusable would otherwise fail
+#   with "Input required and not supplied: token".
+#
 # Accepts an optional workflow path (default: .github/workflows/pr-auto-review.yml)
 # so the checks can be exercised against fixtures — see
 # test-pr-auto-review-workflow.test.sh.
@@ -243,6 +247,66 @@ else
     echo "      Use an expression such as:"
     echo "        \${{ github.event_name == 'check_suite' || github.event_name == 'workflow_run' }}"
     echo "      so pull_request-head runs are never cancelled."
+  } >&2
+  PASS=false
+fi
+
+# ── Check 8: the caller job skips for Dependabot and fork pull_request runs (#466) ──
+# Dependabot-triggered and fork pull_request runs receive no Actions secrets, so
+# GH_PAT_WORKFLOWS is empty and the reusable's checkout fails with "Input
+# required and not supplied: token". The pr-auto-review caller job must
+# therefore carry a guard that skips pull_request events from the dependabot[bot]
+# actor and fork PRs, while preserving workflow_run / check_suite events (which
+# have a different context). The guard must be exactly one of:
+#   • github.actor != 'dependabot[bot]' (for backwards compat / all events)
+#   • github.event_name != 'pull_request' || github.actor != 'dependabot[bot]' (event-aware, Dependabot only)
+#   • github.event_name != 'pull_request' || (github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.id == github.event.pull_request.base.repo.id) (event-aware, Dependabot + forks)
+#   • github.event_name != 'pull_request' && github.event_name != 'pull_request_review' || github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.id == github.event.pull_request.base.repo.id (review-aware, Dependabot + forks, also covers pull_request_review)
+# All forms are optional ${{ }}-wrapped / parenthesized. Runs are reported as
+# skipped instead of failed.
+job_if=""
+if ! job_if=$(yq '.jobs.pr-auto-review.if // ""' "$WORKFLOW" 2>/dev/null); then
+  echo "FAIL: yq failed to parse $WORKFLOW. Please check if it is valid YAML."
+  exit 1
+fi
+# Strip whitespace only OUTSIDE single-quoted literals: a space inside a literal
+# (e.g. 'dependabot [bot]') changes the compared string and must stay visible.
+if_norm=""
+in_quote=false
+for (( i = 0; i < ${#job_if}; i++ )); do
+  ch="${job_if:i:1}"
+  if [[ "$ch" == "'" ]]; then
+    if [[ "$in_quote" == true ]]; then in_quote=false; else in_quote=true; fi
+  elif [[ "$in_quote" == false && "$ch" == [[:space:]] ]]; then
+    continue
+  fi
+  if_norm+="$ch"
+done
+if [[ "$if_norm" == '${{'*'}}' ]]; then
+  if_norm="${if_norm#\$\{\{}"
+  if_norm="${if_norm%\}\}}"
+fi
+while [[ "$if_norm" == \(*\) ]]; do
+  if_norm="${if_norm#\(}"
+  if_norm="${if_norm%\)}"
+done
+# Accept the event-aware forms (preferred) or the simple form (backwards compat).
+if [[ "$if_norm" == "github.actor!='dependabot[bot]'" ]] || \
+     [[ "$if_norm" == "github.event_name!='pull_request'||github.actor!='dependabot[bot]'" ]] || \
+     [[ "$if_norm" == "github.event_name!='pull_request'||(github.actor!='dependabot[bot]'&&github.event.pull_request.head.repo.id==github.event.pull_request.base.repo.id)" ]] || \
+     [[ "$if_norm" == "github.event_name!='pull_request'&&github.event_name!='pull_request_review'||github.actor!='dependabot[bot]'&&github.event.pull_request.head.repo.id==github.event.pull_request.base.repo.id" ]]; then
+  echo "PASS: pr-auto-review job skips for the dependabot[bot] actor and fork PRs in $WORKFLOW"
+else
+  {
+    echo "FAIL: 'jobs.pr-auto-review.if' (found: '$job_if') does not skip"
+    echo "      appropriately in $WORKFLOW"
+    echo "      Dependabot and fork pull_request runs get no Actions secrets, so the"
+    echo "      reusable fails with 'Input required and not supplied: token'."
+    echo "      Use one of:"
+    echo "        if: \${{ github.event_name != 'pull_request' && github.event_name != 'pull_request_review' || github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.id == github.event.pull_request.base.repo.id }}"
+    echo "        if: \${{ github.event_name != 'pull_request' || (github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.id == github.event.pull_request.base.repo.id) }}"
+    echo "        if: \${{ github.event_name != 'pull_request' || github.actor != 'dependabot[bot]' }}"
+    echo "        if: \${{ github.actor != 'dependabot[bot]' }}"
   } >&2
   PASS=false
 fi
