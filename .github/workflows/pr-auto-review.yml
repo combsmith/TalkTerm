@@ -71,6 +71,16 @@ concurrency:
 
 jobs:
   pr-auto-review:
+    # Skip Dependabot-actor and fork pull_request runs (issue #466). Pull requests
+    # from github.actor dependabot[bot] and fork PRs get no Actions secrets, so
+    # GH_PAT_WORKFLOWS is empty and the reusable's checkout step fails with
+    # "Input required and not supplied: token". Other triggers (workflow_run,
+    # check_suite) have a different context and can access secrets, so they must
+    # not be skipped. Skipping here reports the job as skipped, not failed.
+    # Dependabot PRs are also handled by dependabot-automerge.yml. The durable
+    # fix belongs in the reusable: it should no-op when the secret is empty.
+    # Remove this guard once that fix ships on the pinned channel.
+    if: ${{ github.event_name != 'pull_request' && github.event_name != 'pull_request_review' || github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.id == github.event.pull_request.base.repo.id }}  # NOSONAR — skip-only guard (reduces failures); not a trust/authorization decision
     permissions:
       pull-requests: read
       checks: read
